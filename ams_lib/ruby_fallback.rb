@@ -64,6 +64,13 @@ module AMS
       # @param [Fixnum] ret Fiddle return type.
       # @return [Fiddle::Function, nil]
       # @since 3.8.0
+      @win32_error = nil
+
+      # Get the error that kept the Windows API from being called, or +nil+.
+      # @return [String, nil]
+      # @since 3.8.0
+      attr_reader :win32_error
+
       def win32_function(library, function, args, ret)
         return nil unless WIN32_AVAILABLE
         key = library + '!' + function
@@ -71,11 +78,25 @@ module AMS
         begin
           handle = Fiddle.dlopen(library)
           fptr = handle[function]
-          return nil if fptr.nil?
+          if fptr.nil?
+            record_win32_error("The #{library} library does not provide #{function}.")
+            return nil
+          end
           @win32_functions[key] = Fiddle::Function.new(fptr, args, ret)
-        rescue StandardError, Fiddle::DLError
+        rescue StandardError, Fiddle::DLError => err
+          record_win32_error("#{err.class}: #{err.message}")
           nil
         end
+      end
+
+      # Remember why the Windows API could not be called. Only the first error
+      # is kept, as every later one is a consequence of it.
+      # @param [String] message
+      # @return [nil]
+      # @since 3.8.0
+      def record_win32_error(message)
+        @win32_error = message if @win32_error.nil?
+        nil
       end
 
       # Convert a Ruby string into a pointer to a null terminated UTF-16
@@ -251,6 +272,8 @@ unless AMS.const_defined?(:DLL, false)
       @loaded = {}
       @status = {}
       @errors = {}
+      @notes = {}
+      @attempts = {}
 
       class << self
 
@@ -260,10 +283,17 @@ unless AMS.const_defined?(:DLL, false)
         # @since 3.8.0
         def load_library(path)
           status, detail = load_library_info(path)
-          status == :loaded ? detail.to_i : (status == :unverified ? 1 : 0)
+          status == :loaded ? detail.to_i : 0
         end
 
         # Load a dynamic library and report how it went.
+        #
+        # Every mechanism that can load a library into the process is tried
+        # until one of them succeeds: Fiddle.dlopen (the loader Ruby itself uses
+        # for the extensions of SketchUp), LoadLibraryExW with the flags that
+        # put the folder of the library into the search path of its
+        # dependencies, and Ruby's own require. The result is verified, so a
+        # library is only reported as loaded when it really is in the process.
         # @param [String] path Path to the library.
         # @return [Array(Symbol, Object)] The status and its detail:
         #   +[:loaded, handle]+ when the library is in the process,
@@ -274,41 +304,79 @@ unless AMS.const_defined?(:DLL, false)
         def load_library_info(path)
           path = path.to_s
           return [@status[path], @errors[path]] if @status.key?(path)
-          status = :failed
+          unless ::File.exist?(path)
+            @status[path] = :failed
+            @errors[path] = 'The file does not exist.'
+            @attempts[path] = []
+            return [:failed, @errors[path]]
+          end
+          attempts = []
+          status = nil
           detail = nil
-          if !::File.exist?(path)
-            detail = 'The file does not exist.'
-          elsif AMS::IS_PLATFORM_WINDOWS
-            if AMS::FallbackHelper::WIN32_AVAILABLE
-              # The Windows API is available: load the library with the flags
-              # that make Windows search its own folder for its dependencies.
-              # The plain mode is the fallback for the case that the flags are
-              # not supported, e.g. on Windows 7 without KB2533623.
-              win_path = path.tr('/', "\\")
-              [[LOAD_WITH_LIBRARIES_FROM_FOLDER, true], [0, false]].each { |flags, _search|
-                handle, message = AMS::FallbackHelper.load_library_ex(win_path, flags)
-                if handle.to_i > 0
-                  status = :loaded
-                  detail = handle.to_i
-                  break
-                end
-                detail = message unless message.nil?
-              }
-            else
-              # The Windows API cannot be called through Fiddle. Load the
-              # library through Ruby's own loader, which has to load the library
-              # into the process before the c extension is required: Ruby calls
-              # LoadLibrary before it looks up the Init_ function of the
-              # library, so a library that is not a Ruby extension remains
-              # loaded even though that lookup fails.
-              status, detail = load_library_via_require(path)
+          # 1. Fiddle.dlopen is the loader Ruby itself uses for the extensions
+          #    of SketchUp, and it raises a message that names the reason when
+          #    it fails, which makes it the most useful one to try first.
+          if AMS::FallbackHelper::FIDDLE_AVAILABLE
+            begin
+              Fiddle.dlopen(path)
+              # Fiddle.dlopen raises upon failure, so the library is in the
+              # process at this point.
+              handle = module_handle(::File.basename(path))
+              status = handle > 0 ? :loaded : :unverified
+              detail = handle > 0 ? handle : 'Fiddle.dlopen loaded the library.'
+              attempts << "Fiddle.dlopen: loaded#{handle > 0 ? '' : ' (the handle could not be verified)'}"
+            rescue StandardError, Fiddle::DLError => err
+              attempts << "Fiddle.dlopen: #{err.message}"
             end
-          else
-            status, detail = load_library_via_require(path)
+          end
+          # 2. LoadLibraryExW, first with the folder of the library in the
+          #    search path of its dependencies, then plain.
+          if status.nil? && AMS::FallbackHelper::WIN32_AVAILABLE
+            win_path = path.tr('/', "\\")
+            [['with the folder of the library in the search path', LOAD_WITH_LIBRARIES_FROM_FOLDER],
+             ['plain', 0]].each { |label, flags|
+              handle, message = AMS::FallbackHelper.load_library_ex(win_path, flags)
+              if handle.to_i > 0
+                status = :loaded
+                detail = handle.to_i
+                attempts << "LoadLibraryExW (#{label}): loaded"
+                break
+              end
+              attempts << "LoadLibraryExW (#{label}): #{message.nil? || message.empty? ? 'failed' : message}"
+            }
+          end
+          # 3. Ruby's own loader, which calls LoadLibrary before it looks for
+          #    the entry point of the library, so even a library that is not a
+          #    Ruby extension is left in the process when the lookup fails.
+          if status.nil?
+            require_status, require_detail = load_library_via_require(path)
+            attempts << "Ruby require: #{require_detail}"
+            status = require_status
+            detail = require_detail
+          end
+          if AMS::FallbackHelper::WIN32_AVAILABLE && AMS::FallbackHelper.win32_error
+            attempts << "The Windows API could not be called: #{AMS::FallbackHelper.win32_error}"
           end
           @status[path] = status
-          @errors[path] = detail
-          [status, detail]
+          @attempts[path] = attempts
+          if status == :loaded
+            @notes[path] = detail
+            [:loaded, detail]
+          elsif status == :unverified
+            @errors[path] = detail
+            [:unverified, detail]
+          else
+            @errors[path] = attempts.first.to_s
+            [:failed, @errors[path]]
+          end
+        end
+
+        # Get what was tried to load a library, and how it went.
+        # @param [String] path Path of the library.
+        # @return [Array<String>]
+        # @since 3.8.0
+        def library_attempts(path)
+          @attempts[path.to_s] || []
         end
 
         # Load a library through Ruby's require, which does not return a
@@ -321,16 +389,15 @@ unless AMS.const_defined?(:DLL, false)
           begin
             ::Kernel.require(path)
             # The library is a Ruby extension and was loaded by Ruby.
-            handle = get_module_handle(::File.basename(path))
-            return handle.to_i > 0 ? [:loaded, handle.to_i] : [:unverified, 'Ruby loaded the library.']
+            handle = module_handle(::File.basename(path))
+            return handle > 0 ? [:loaded, handle] : [:unverified, 'Ruby loaded the library.']
           rescue LoadError => err
             message = err.message.to_s
-            # Ruby loads the library before it looks for the Init_ function of
-            # the library, so an error about the entry point that is missing
-            # means the library is in the process. An error about the library
-            # that is missing means it is not.
-            handle = get_module_handle(::File.basename(path))
-            return [:loaded, handle.to_i] if handle.to_i > 0
+            handle = module_handle(::File.basename(path))
+            return [:loaded, handle] if handle > 0
+            # Ruby loads the library before it looks for the entry point of the
+            # library, so an error about the entry point that is missing means
+            # the library is in the process.
             if message =~ /Init_|entry point|procedure could not be found|undefined symbol/i
               return [:unverified, 'Ruby loaded the library, but the handle could not be verified.']
             end
@@ -338,24 +405,6 @@ unless AMS.const_defined?(:DLL, false)
           rescue Exception => err
             [:failed, "#{err.class}: #{err.message}"]
           end
-        end
-
-        # Get the error of a library that could not be loaded.
-        # @param [String] path
-        # @return [String, nil]
-        # @since 3.8.0
-        def library_error(path)
-          path = path.to_s
-          return @errors[path] if @status[path] == :failed
-          nil
-        end
-
-        # Get whether a library is loaded into the process.
-        # @param [String] name Name of the library, e.g. +'newton.dll'+.
-        # @return [Boolean]
-        # @since 3.8.0
-        def loaded?(name)
-          get_module_handle(name).to_i > 0
         end
 
         # Get the names of the libraries a Portable Executable imports. This
@@ -425,7 +474,7 @@ unless AMS.const_defined?(:DLL, false)
           lines = ["Libraries #{::File.basename(path.to_s)} depends on:"]
           missing = []
           names.each { |name|
-            if get_module_handle(name).to_i > 0
+            if module_handle(name) > 0
               lines << "  #{name} : loaded in SketchUp"
             else
               found = folders.compact.map { |folder|
@@ -447,6 +496,78 @@ unless AMS.const_defined?(:DLL, false)
           lines.join("\n")
         end
 
+        # Get the handle of a library that is loaded in the process.
+        # @param [String] name Name of the library, e.g. +'newton.dll'+.
+        # @return [Fixnum] The handle, or +0+ when it cannot be determined.
+        # @since 3.8.0
+        def module_handle(name)
+          return 0 unless AMS::FallbackHelper::WIN32_AVAILABLE
+          AMS::FallbackHelper.call_win32('kernel32', 'GetModuleHandleW',
+            [Fiddle::TYPE_VOIDP], Fiddle::TYPE_VOIDP,
+            AMS::FallbackHelper.wide_string(name.to_s)).to_i
+        rescue StandardError, Fiddle::DLError
+          0
+        end
+
+        # Get the error of a library that could not be loaded.
+        # @param [String] path
+        # @return [String, nil]
+        # @since 3.8.0
+        def library_error(path)
+          path = path.to_s
+          return @errors[path] if @status[path] == :failed
+          nil
+        end
+
+        # Get whether a library is loaded into the process.
+        # @param [String] name Name of the library, e.g. +'newton.dll'+.
+        # @return [Boolean]
+        # @since 3.8.0
+        def loaded?(name)
+          module_handle(name) > 0
+        end
+
+        # Get the name of the Ruby library the running SketchUp uses, e.g.
+        # +'x64-ucrt-ruby320.dll'+.
+        # @return [String, nil]
+        # @since 3.8.0
+        def ruby_library_name
+          require 'rbconfig' unless defined?(::RbConfig)
+          name = ::RbConfig::CONFIG['RUBY_SO_NAME']
+          name.nil? || name.to_s.empty? ? nil : name.to_s + '.dll'
+        rescue Exception
+          nil
+        end
+
+        # Get the names of the Ruby libraries a Portable Executable imports.
+        # @param [String] path Path of the executable.
+        # @return [Array<String>]
+        # @since 3.8.0
+        def imported_ruby_libraries(path)
+          dependencies(path).select { |name| name =~ /ruby\d+\.dll\z/i }
+        end
+
+        # Report whether the libraries a Portable Executable imports for Ruby
+        # match the Ruby library of the running SketchUp.
+        #
+        # SketchUp ships a Ruby library whose name encodes the build it was made
+        # with, e.g. +x64-ucrt-ruby320.dll+ for the Universal CRT build of Ruby
+        # 3.2. An extension that was linked against a different one cannot be
+        # loaded, and the error Windows gives ("The specified module could not
+        # be found") does not say why.
+        # @param [String] path Path of the executable.
+        # @return [String, nil] A description of the mismatch, or +nil+ when
+        #   there is none.
+        # @since 3.8.0
+        def ruby_library_mismatch(path)
+          imported = imported_ruby_libraries(path)
+          return nil if imported.empty?
+          expected = ruby_library_name
+          return nil if expected.nil?
+          return nil if imported.any? { |name| name.casecmp(expected) == 0 }
+          "The extension was built against #{imported.join(', ')}, but the Ruby of this " \
+          "SketchUp is #{expected}."
+        end
         # Unload a dynamic library.
         # @param [Fixnum] handle
         # @return [Boolean] success
@@ -467,13 +588,7 @@ unless AMS.const_defined?(:DLL, false)
         # @return [Fixnum]
         # @since 3.8.0
         def get_module_handle(name)
-          return 0 unless AMS::FallbackHelper::WIN32_AVAILABLE
-          wname = AMS::FallbackHelper.wide_string(name)
-          return 0 unless wname
-          handle = AMS::FallbackHelper.call_win32('kernel32', 'GetModuleHandleW',
-            [Fiddle::TYPE_VOIDP], Fiddle::TYPE_VOIDP, wname)
-          handle = handle.to_i
-          handle < 0 ? 0 : handle
+          module_handle(name)
         end
 
       end # class << self

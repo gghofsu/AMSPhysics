@@ -94,6 +94,23 @@ module MSPhysics
     lines << "  Native engines in #{stage_dir}: #{safe.call {
       ::File.directory?(stage_dir) ? ::Dir.entries(stage_dir).select { |entry| ::File.directory?(::File.join(stage_dir, entry)) && entry =~ /\A\d+\.\d+\z/ }.sort.inspect : 'folder does not exist'
     }}"
+    # The engine has to be built against the very Ruby library of the running
+    # SketchUp, and the name of that library encodes the build of Ruby used.
+    if defined?(::AMS::DLL) && ::AMS::DLL.respond_to?(:ruby_library_name)
+      lines << "  Ruby library of this SketchUp: #{safe.call { ::AMS::DLL.ruby_library_name }}"
+      engine = safe.call {
+        abi = RUBY_VERSION[0..2].to_s
+        ext = defined?(::AMS::IS_PLATFORM_WINDOWS) && ::AMS::IS_PLATFORM_WINDOWS ? '.so' : '.bundle'
+        path = ::File.join(stage_dir, abi, 'msp_lib' + ext)
+        ::File.exist?(path) ? path : nil
+      }
+      lines << "  Engine: #{engine}"
+      if engine.to_s.start_with?('/') || engine.to_s =~ /:\A-Za-z:/
+        lines << "  Engine is built against: #{safe.call { ::AMS::DLL.imported_ruby_libraries(engine).inspect }}"
+        mismatch = safe.call { ::AMS::DLL.ruby_library_mismatch(engine) }
+        lines << "  PROBLEM: #{mismatch}" unless mismatch.to_s == 'nil'
+      end
+    end
     lines
   end
 

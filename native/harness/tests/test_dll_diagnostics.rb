@@ -62,6 +62,28 @@ check(failures, 'FallbackHelper.error_message without the Windows API') { AMS::F
 check(failures, 'FallbackHelper.add_dll_directory without the Windows API') { AMS::FallbackHelper.add_dll_directory('C:/') }
 check(failures, 'FallbackHelper.load_library_ex without the Windows API') { AMS::FallbackHelper.load_library_ex('C:/newton.dll', 0) }
 
+puts '== the Ruby library the engine is built against =='
+check(failures, 'imported_ruby_libraries(msp_lib.so)') { AMS::DLL.imported_ruby_libraries("#{STAGE}/msp_lib.so") }
+check(failures, 'the Ruby library of a library without one') { AMS::DLL.imported_ruby_libraries("#{STAGE}/../newton.dll") }
+check(failures, 'ruby_library_name') { AMS::DLL.ruby_library_name }
+# Pretend that this SketchUp uses the Universal CRT build of Ruby 3.2, which
+# is the one the staged engine is linked against.
+original_so_name = ::RbConfig::CONFIG['RUBY_SO_NAME']
+begin
+  ::RbConfig::CONFIG['RUBY_SO_NAME'] = 'x64-ucrt-ruby320'
+  check(failures, 'ruby_library_mismatch is quiet when the names match') {
+    AMS::DLL.ruby_library_mismatch("#{STAGE}/msp_lib.so")
+  }
+  check(failures, 'ruby_library_name of a Universal CRT Ruby 3.2') { AMS::DLL.ruby_library_name }
+  # Pretend that this SketchUp uses a Ruby library with a different name.
+  ::RbConfig::CONFIG['RUBY_SO_NAME'] = 'x64-msvcrt-ruby320'
+  check(failures, 'ruby_library_mismatch reports a mismatch') {
+    AMS::DLL.ruby_library_mismatch("#{STAGE}/msp_lib.so")
+  }
+ensure
+  ::RbConfig::CONFIG['RUBY_SO_NAME'] = original_so_name
+end
+
 puts
 if failures.empty?
   puts "== ALL #{$checks} DLL DIAGNOSTIC CHECKS PASSED =="

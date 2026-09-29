@@ -412,14 +412,16 @@ module AMS
             failed << [fname, data[1], 'The file does not exist.'] if data[1]
           elsif reports_status
             status, detail = AMS::DLL.load_library_info(fpath)
+            attempts = AMS::DLL.respond_to?(:library_attempts) ? AMS::DLL.library_attempts(fpath) : []
             case status
             when :loaded
               dll_report << sprintf("%s : loaded (handle %d)\n", fname, detail.to_i)
             when :unverified
               dll_report << sprintf("%s : loaded, but the handle could not be verified (%s)\n", fname, detail)
             else
-              dll_report << sprintf("%s : FAILED (%s)\n", fname, detail)
-              failed << [fname, data[1], detail] if data[1]
+              dll_report << sprintf("%s : FAILED\n", fname)
+              attempts.each { |attempt| dll_report << "    #{attempt}\n" }
+              failed << [fname, data[1], detail, attempts] if data[1]
             end
           else
             # An older AMS Library provides no detailed result.
@@ -437,16 +439,20 @@ module AMS
         # is much harder to diagnose, e.g. "The specified module could not be
         # found", which does not name the library that is missing.
         unless failed.empty?
-          names = failed.map { |name, _required, _detail| name }
+          names = failed.map { |name, _required, _detail, _attempts| name }
           msg = "The required #{names.size == 1 ? 'library' : 'libraries'} of " \
                 "#{@ext_name} could not be loaded into SketchUp! " \
                 "The engine of the extension cannot work without #{names.size == 1 ? 'it' : 'them'}.\n"
-          failed.each { |name, _required, detail| msg << "  - #{name}: #{detail}\n" }
+          failed.each { |name, _required, _detail, attempts|
+            msg << "  - #{name}:\n"
+            attempts.each { |attempt| msg << "      #{attempt}\n" }
+          }
           msg << "\n#{dll_report}"
-          # The reason why a library cannot be loaded is often a library that
-          # that library depends on, so report what the first of them needs.
           if AMS::DLL.respond_to?(:describe_dependencies)
-            report = AMS::DLL.describe_dependencies(::File.join(lib_load_path, failed.first[0]), [lib_load_path])
+            # The reason why a library cannot be loaded is often a library that
+            # library depends on, so report what the libraries need.
+            first_path = ::File.join(lib_load_path, failed.first[0])
+            report = AMS::DLL.describe_dependencies(first_path, [lib_load_path])
             msg << "\n#{report}" unless report.to_s.empty?
           end
           raise(IOError, msg)
@@ -480,6 +486,10 @@ module AMS
           rescue LoadError => e
             msg = "An exception occurred while loading #{@ext_name}, version #{@ext_version}!\n\n#{e.message}"
             msg << "\n\n#{dll_report}" if dll_report
+            if AMS::DLL.respond_to?(:ruby_library_mismatch)
+              mismatch = AMS::DLL.ruby_library_mismatch(fpath)
+              msg << "\n\n#{mismatch}" unless mismatch.nil?
+            end
             if AMS::DLL.respond_to?(:describe_dependencies)
               report = AMS::DLL.describe_dependencies(fpath, [lib_load_path, ext_load_path])
               msg << "\n\n#{report}" unless report.to_s.empty?

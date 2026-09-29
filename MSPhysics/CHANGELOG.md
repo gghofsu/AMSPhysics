@@ -1,3 +1,18 @@
+## 1.1.4 - September 29, 2026
+- Every mechanism that can load a library into SketchUp is tried until one of
+  them succeeds: Fiddle.dlopen (the loader Ruby itself uses for the extensions
+  of SketchUp), LoadLibraryExW with the folder of the library in the search path
+  of its dependencies, plain LoadLibraryExW, and Ruby's own require. Before,
+  the Windows API and Ruby's loader were alternatives, so a Windows API call
+  that failed silently left the libraries of the engine unloaded.
+- The reason why a library could not be loaded is reported for every library
+  and for every mechanism that was tried, including the error of the Windows
+  API itself when it cannot be called at all.
+- The report states which Ruby library the engine is built against and which
+  one the running SketchUp uses (RbConfig::CONFIG['RUBY_SO_NAME']). An engine
+  that is linked against a different Ruby library cannot be loaded, and Windows
+  only reports "The specified module could not be found" in that case.
+
 ## 1.1.3 - September 29, 2026
 - The libraries of the engine are loaded with LoadLibraryExW and the flags that
   make Windows look for the libraries of a library in its own folder and in the

@@ -65,5 +65,5 @@ if failures.empty?
 else
   puts "== #{failures.size} FAILURES =="
   failures.each { |failure| puts "   - #{failure}" }
-  exit 1
+  raise 'HARNESS TESTS FAILED'
 end

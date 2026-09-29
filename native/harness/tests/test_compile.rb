@@ -19,4 +19,4 @@ files.each do |fpath|
 end
 puts '---'
 puts "#{files.size} files checked with Ruby #{RUBY_VERSION}, #{bad} with syntax errors"
-exit 1 unless bad.zero?
+raise 'HARNESS TESTS FAILED' unless bad.zero?

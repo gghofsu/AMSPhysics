@@ -41,21 +41,36 @@ node native/harness/run_wasm.js native/harness/tests/test_load.rb
 node native/harness/run_wasm.js native/harness/tests/test_ams_fallback.rb
 ```
 
-Any other Ruby script can be run the same way; the repository is available as
-the virtual file system root, so `require 'MSPhysics.rb'` and
-`require 'ams_lib/main'` work as they do in SketchUp.
-
-All of the tests can also be run at once:
+All of the tests at once, on the Ruby version SketchUp 2024-2026 embed:
 
 ```sh
 native/harness/run_tests.sh
 ```
 
+SketchUp announced that it will move to Ruby 3.4. The same tests can be run on
+that version, if `@ruby/3.4-wasm-wasi` is installed next to the packages above.
+On Ruby 3.4 no native engine is staged yet, so `test_load.rb` copies the 3.2
+engine into place as a stand-in (`--simulate-abi`) in order to exercise the Ruby
+code, and `test_extension_manager.rb` verifies that the missing engine is
+reported instead of failing.
+
+```sh
+native/harness/run_tests.sh --ruby 3.4
+```
+
+Individual scripts can be run on Ruby 3.4 with
+`RUBY_WASM_VERSION=3.4 node native/harness/run_wasm.js <script.rb>`.
+
+Any other Ruby script can be run the same way; the repository is available as
+the virtual file system root, so `require 'MSPhysics.rb'` and
+`require 'ams_lib/main'` work as they do in SketchUp.
+
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `run_wasm.js` | Boots the Ruby 3.2 WASM VM with the repository mounted at `/` and `stubs/` merged into it. |
+| `run_wasm.js` | Boots the Ruby 3.2 (or 3.4, via `RUBY_WASM_VERSION`) WASM VM with the repository mounted at `/` and `stubs/` merged into it. |
+| `run_tests.sh` | Runs all of the tests. |
 | `stubs/sketchup.rb`, `stubs/extensions.rb` | Stand-ins for SketchUp's own Ruby files. |
 | `stubs/stub_sketchup_api.rb` | Stub of the SketchUp Ruby API (`Sketchup`, `UI`, `Geom`, entities, observers, model, pages, rendering options, shadow info, ...), reporting itself as 64 bit SketchUp 2026 on Windows. |
 | `stubs/stub_msphysics_native.rb` | Fakes for the classes that come from `msp_lib.so` (`MSPhysics::Newton`, `MSPhysics::SDL`, `MSPhysics::Mixer`, `MSPhysics::Sound`, `MSPhysics::Music`) and their constants. |

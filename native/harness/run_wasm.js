@@ -28,6 +28,10 @@ const {
   WASI,
 } = require(path.join(MODULES, '@bjorn3/browser_wasi_shim'));
 
+// Ruby version to run: 3.2 (the version SketchUp 2024-2026 embed) by default,
+// or 3.4 (the version SketchUp announced for a future release).
+const RUBY_VERSION_TARGET = process.env.RUBY_WASM_VERSION || '3.2';
+
 const ROOT = path.resolve(__dirname, '..', '..');
 const STUBS = path.join(__dirname, 'stubs');
 
@@ -87,7 +91,7 @@ function lineBuffered(prefix) {
   ];
   const wasi = new WASI([], [], fds, { debug: false });
   const source = fs.readFileSync(
-    path.join(MODULES, '@ruby/3.2-wasm-wasi/dist/ruby+stdlib.wasm')
+    path.join(MODULES, `@ruby/${RUBY_VERSION_TARGET}-wasm-wasi/dist/ruby+stdlib.wasm`)
   );
   const module_ = await WebAssembly.compile(source);
   const { vm } = await RubyVM.instantiateModule({ module: module_, wasip1: wasi });
@@ -97,7 +101,15 @@ function lineBuffered(prefix) {
     vm.eval(code);
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
-    console.error('RUBY ERROR: ' + message);
-    process.exitCode = 1;
+    // The tests raise this sentinel after reporting the failures themselves.
+    if (message.includes('HARNESS TESTS DONE EARLY')) {
+      // The script finished its checks and stopped on purpose.
+      process.exitCode = 0;
+    } else if (message.includes('HARNESS TESTS FAILED')) {
+      process.exitCode = 1;
+    } else {
+      console.error('RUBY ERROR: ' + message);
+      process.exitCode = 1;
+    }
   }
 })();

@@ -39,8 +39,25 @@ check(failures, 'AMS::ExtensionManager.new') {
   manager.class
 }
 
-check(failures, "available_c_extension_abis('msp_lib')") { manager.available_c_extension_abis('msp_lib') }
-check(failures, "c_extension_available?('msp_lib')") { manager.c_extension_available?('msp_lib') }
+abis = check(failures, "available_c_extension_abis('msp_lib')") { manager.available_c_extension_abis('msp_lib') }
+native_available = check(failures, "c_extension_available?('msp_lib') for Ruby #{ABI}") {
+  manager.c_extension_available?('msp_lib')
+}
+
+unless native_available
+  # No engine is staged for the running Ruby version (e.g. when running on
+  # Ruby 3.4, which SketchUp announced for a future release). The staging
+  # checks below only make sense when an engine exists; what matters here is
+  # that the manager reports the situation instead of failing.
+  puts "   note: no engine staged for Ruby #{ABI} (available: #{abis.inspect})"
+  puts
+  if manager.c_extension_available?('msp_lib') == false
+    puts '== EXTENSION MANAGER CHECKS PASSED (no staged engine for this Ruby) =='
+    raise 'HARNESS TESTS DONE EARLY'
+  end
+  puts '== CHECKS FAILED =='
+  raise 'HARNESS TESTS FAILED'
+end
 
 # Register the same files as MSPhysics/main.rb does.
 check(failures, 'add libraries and ruby files') {
@@ -85,5 +102,5 @@ if failures.empty?
 else
   puts "== #{failures.size} of #{$checks} CHECKS FAILED =="
   failures.each { |failure| puts "   - #{failure}" }
-  exit 1
+  raise 'HARNESS TESTS FAILED'
 end

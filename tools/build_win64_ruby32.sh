@@ -67,6 +67,38 @@ cat > "$B/compat/SDKDDKVer.h" <<'EOF'
 #endif
 EOF
 
+# The Universal CRT headers of MinGW make memchr an import of the private API
+# set (api-ms-win-crt-private-l1-1-0.dll), which is not part of the documented
+# API surface of Windows. Provide it from this translation unit instead, so
+# that the libraries only depend on documented libraries.
+cat > "$B/compat/memchr_shim.c" <<'EOF'
+/* Compatibility shim: keep the private Universal CRT API set out of the import
+   table by providing memchr from the library itself. */
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+#if defined(__clang__)
+__attribute__((optnone))
+#elif defined(__GNUC__)
+__attribute__((optimize("O0")))
+#endif
+void *memchr(const void *buffer, int character, unsigned long long size)
+{
+    const unsigned char *p = (const unsigned char *)buffer;
+    unsigned char c = (unsigned char)character;
+    while (size-- > 0) {
+        if (*p == c) return (void *)p;
+        p++;
+    }
+    return 0;
+}
+
+#if defined(__cplusplus)
+}
+#endif
+EOF
+
 export ENG_FLAGS="-target x86_64-windows-gnu -O2 -msse2 -msse3 -msse4.1 -DNDEBUG -DWIN32 -D_LIB -D_WIN_64_VER -D_CRT_SECURE_NO_WARNINGS -w \
 -I$ND/dMath -I$ND/dgCore -I$ND/dgPhysics -I$ND/dgMeshUtil"
 
@@ -96,6 +128,13 @@ build_set() { # $1=label $2=mode $3..=sources
 build_set "newton engine" engine \
   "$ND"/dMath/*.cpp "$ND"/dgCore/*.cpp "$ND"/dgPhysics/*.cpp "$ND"/dgMeshUtil/*.cpp
 build_set "msp_lib" msp "$SRC"/Source/main/*.cpp "$SRC"/Source/win/*.cpp
+
+echo "=== compiling the compatibility shims ==="
+# -fno-builtin keeps the compiler from turning the loop of memchr into a call
+# to memchr itself; the function is also marked as not optimizable for that
+# reason.
+$ZIG cc -target x86_64-windows-gnu -O2 -fno-builtin -c "$B/compat/memchr_shim.c" -o "$OBJ/engine/memchr_shim.o"
+cp -f "$OBJ/engine/memchr_shim.o" "$OBJ/msp/memchr_shim.o"
 
 echo "=== archiving engine ==="
 rm -f "$OUT/libnewton_engine.a"

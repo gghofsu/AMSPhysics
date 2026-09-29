@@ -100,6 +100,82 @@ module AMS
         nil
       end
 
+      # Get the error code the last Windows API call set.
+      # @return [Fixnum, nil]
+      # @since 3.8.0
+      def last_error
+        return nil unless WIN32_AVAILABLE
+        value = call_win32('kernel32', 'GetLastError', [], Fiddle::TYPE_INT)
+        value.nil? ? nil : value.to_i
+      end
+
+      # Turn a Windows error code into a message like
+      # +"126: The specified module could not be found."+.
+      # @param [Fixnum, nil] code Error code, or +nil+ for the last error.
+      # @return [String, nil]
+      # @since 3.8.0
+      def error_message(code = nil)
+        code = last_error if code.nil?
+        return nil if code.nil? || code.to_i == 0
+        size = 2048
+        buffer = Fiddle::Pointer["\x00".dup.force_encoding('BINARY') * size]
+        length = call_win32('kernel32', 'FormatMessageW',
+          [Fiddle::TYPE_INT, Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT, Fiddle::TYPE_INT,
+           Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT,
+          0x1000 | 0x200, 0, code.to_i, 0, buffer, size / 2, 0)
+        return code.to_s if length.nil? || length.to_i <= 0
+        text = buffer[0, size].force_encoding('UTF-16LE').encode('UTF-8').split("\x00").first.to_s.strip
+        text.empty? ? code.to_s : "#{code}: #{text}"
+      rescue StandardError, Fiddle::DLError
+        code.to_s
+      end
+
+      # Load a library through the Windows API.
+      # @param [String] path Path of the library.
+      # @param [Fixnum] flags Flags of LoadLibraryExW.
+      # @return [Array(Fixnum, String, nil)] The handle of the library (or +0+
+      #   upon failure), and the error message upon failure.
+      # @since 3.8.0
+      def load_library_ex(path, flags)
+        return [0, nil] unless WIN32_AVAILABLE
+        wpath = wide_string(path)
+        return [0, nil] unless wpath
+        value = call_win32('kernel32', 'LoadLibraryExW',
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT], Fiddle::TYPE_VOIDP,
+          wpath, 0, flags.to_i)
+        code = last_error
+        handle = value.nil? ? 0 : value.to_i
+        handle = 0 if handle < 0
+        [handle, handle > 0 ? nil : error_message(code)]
+      end
+
+      # Add a folder to the search path of the libraries of this process
+      # (Windows 8 and later).
+      # @param [String] path Path of the folder.
+      # @return [Fixnum, nil] A cookie, or +nil+ upon failure. The cookie can be
+      #   used with {#remove_dll_directory}.
+      # @since 3.8.0
+      def add_dll_directory(path)
+        return nil unless WIN32_AVAILABLE
+        wpath = wide_string(path)
+        return nil unless wpath
+        value = call_win32('kernel32', 'AddDllDirectory', [Fiddle::TYPE_VOIDP], Fiddle::TYPE_VOIDP, wpath)
+        cookie = value.to_i
+        cookie > 0 ? cookie : nil
+      end
+
+      # Remove a folder added with {#add_dll_directory}.
+      # @param [Fixnum] cookie
+      # @return [Boolean] success
+      # @since 3.8.0
+      def remove_dll_directory(cookie)
+        return false unless WIN32_AVAILABLE
+        return false unless cookie.to_i > 0
+        value = call_win32('kernel32', 'RemoveDllDirectory', [Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT, cookie.to_i)
+        !value.nil? && value.to_i != 0
+      end
+
     end # class << self
   end # module FallbackHelper
 
@@ -164,7 +240,17 @@ unless AMS.const_defined?(:DLL, false)
 
       TYPE_POINTER = AMS::FallbackHelper::FIDDLE_AVAILABLE ? Fiddle::TYPE_VOIDP : 0
 
+      # The flags for LoadLibraryExW that make Windows search the folder of the
+      # library for the libraries it depends on, next to the folder of the
+      # application, the folders added with AddDllDirectory, and the system
+      # folders. Without them, Windows does not look for the libraries of a
+      # library in the folder of that library.
+      # @since 3.8.0
+      LOAD_WITH_LIBRARIES_FROM_FOLDER = 0x00000100 | 0x00001000 | 0x00000800
+
       @loaded = {}
+      @status = {}
+      @errors = {}
 
       class << self
 
@@ -173,51 +259,192 @@ unless AMS.const_defined?(:DLL, false)
         # @return [Fixnum] Handle to the library, or +0+ upon failure.
         # @since 3.8.0
         def load_library(path)
-          path = path.to_s
-          return @loaded[path] if @loaded.key?(path)
-          handle = 0
-          if AMS::FallbackHelper::WIN32_AVAILABLE
-            wpath = AMS::FallbackHelper.wide_string(path)
-            if wpath
-              value = AMS::FallbackHelper.call_win32('kernel32', 'LoadLibraryW',
-                [Fiddle::TYPE_VOIDP], Fiddle::TYPE_VOIDP, wpath)
-              value = value.to_i
-              handle = value < 0 ? 0 : value
-            end
-          end
-          # Load the library through Ruby's own loader, which also has to load
-          # the library into the process before the c extension is required.
-          # Ruby calls LoadLibrary before it looks up the Init_ function of the
-          # library, so a library that is not a Ruby extension remains loaded
-          # even though that lookup fails. This is what makes the native part of
-          # MSPhysics work on installations where the Windows API cannot be
-          # called through Fiddle.
-          if handle.to_i <= 0 && AMS::IS_PLATFORM_WINDOWS && ::File.exist?(path)
-            handle = load_library_via_require(path)
-          end
-          @loaded[path] = handle
-          handle
+          status, detail = load_library_info(path)
+          status == :loaded ? detail.to_i : (status == :unverified ? 1 : 0)
         end
 
-        # Load a library through Ruby's require, which does not return a handle.
-        # @param [String] path
-        # @return [Fixnum] A handle, or +0+ when the library could not be
+        # Load a dynamic library and report how it went.
+        # @param [String] path Path to the library.
+        # @return [Array(Symbol, Object)] The status and its detail:
+        #   +[:loaded, handle]+ when the library is in the process,
+        #   +[:unverified, note]+ when the library was loaded but the handle
+        #   could not be verified, and +[:failed, message]+ when it could not be
         #   loaded.
+        # @since 3.8.0
+        def load_library_info(path)
+          path = path.to_s
+          return [@status[path], @errors[path]] if @status.key?(path)
+          status = :failed
+          detail = nil
+          if !::File.exist?(path)
+            detail = 'The file does not exist.'
+          elsif AMS::IS_PLATFORM_WINDOWS
+            if AMS::FallbackHelper::WIN32_AVAILABLE
+              # The Windows API is available: load the library with the flags
+              # that make Windows search its own folder for its dependencies.
+              # The plain mode is the fallback for the case that the flags are
+              # not supported, e.g. on Windows 7 without KB2533623.
+              win_path = path.tr('/', "\\")
+              [[LOAD_WITH_LIBRARIES_FROM_FOLDER, true], [0, false]].each { |flags, _search|
+                handle, message = AMS::FallbackHelper.load_library_ex(win_path, flags)
+                if handle.to_i > 0
+                  status = :loaded
+                  detail = handle.to_i
+                  break
+                end
+                detail = message unless message.nil?
+              }
+            else
+              # The Windows API cannot be called through Fiddle. Load the
+              # library through Ruby's own loader, which has to load the library
+              # into the process before the c extension is required: Ruby calls
+              # LoadLibrary before it looks up the Init_ function of the
+              # library, so a library that is not a Ruby extension remains
+              # loaded even though that lookup fails.
+              status, detail = load_library_via_require(path)
+            end
+          else
+            status, detail = load_library_via_require(path)
+          end
+          @status[path] = status
+          @errors[path] = detail
+          [status, detail]
+        end
+
+        # Load a library through Ruby's require, which does not return a
+        # handle.
+        # @param [String] path
+        # @return [Array(Symbol, Object)] The status and its detail. See
+        #   {#load_library_info}.
         # @since 3.8.0
         def load_library_via_require(path)
           begin
             ::Kernel.require(path)
-          rescue LoadError
-            # Ruby raises a LoadError for a library that does not export an
-            # Init_ function, which is the case for newton.dll and the SDL2
-            # libraries. Such a library has already been loaded at this point.
-            nil
-          rescue Exception
-            return 0
+            # The library is a Ruby extension and was loaded by Ruby.
+            handle = get_module_handle(::File.basename(path))
+            return handle.to_i > 0 ? [:loaded, handle.to_i] : [:unverified, 'Ruby loaded the library.']
+          rescue LoadError => err
+            message = err.message.to_s
+            # Ruby loads the library before it looks for the Init_ function of
+            # the library, so an error about the entry point that is missing
+            # means the library is in the process. An error about the library
+            # that is missing means it is not.
+            handle = get_module_handle(::File.basename(path))
+            return [:loaded, handle.to_i] if handle.to_i > 0
+            if message =~ /Init_|entry point|procedure could not be found|undefined symbol/i
+              return [:unverified, 'Ruby loaded the library, but the handle could not be verified.']
+            end
+            [:failed, message.strip]
+          rescue Exception => err
+            [:failed, "#{err.class}: #{err.message}"]
           end
-          name = ::File.basename(path)
-          handle = get_module_handle(name)
-          handle.to_i > 0 ? handle : 1
+        end
+
+        # Get the error of a library that could not be loaded.
+        # @param [String] path
+        # @return [String, nil]
+        # @since 3.8.0
+        def library_error(path)
+          path = path.to_s
+          return @errors[path] if @status[path] == :failed
+          nil
+        end
+
+        # Get whether a library is loaded into the process.
+        # @param [String] name Name of the library, e.g. +'newton.dll'+.
+        # @return [Boolean]
+        # @since 3.8.0
+        def loaded?(name)
+          get_module_handle(name).to_i > 0
+        end
+
+        # Get the names of the libraries a Portable Executable imports. This
+        # does not call any Windows API, so it can be used to diagnose why a
+        # library cannot be loaded, even when the Windows API is not available.
+        # @param [String] path Path of the executable.
+        # @return [Array<String>]
+        # @since 3.8.0
+        def dependencies(path)
+          return [] unless ::File.exist?(path.to_s)
+          data = ::File.binread(path.to_s)
+          return [] if data.nil? || data.bytesize < 64
+          pe_offset = data[0x3c, 4].unpack('V').first.to_i
+          return [] if pe_offset <= 0 || data.bytesize < pe_offset + 24
+          return [] unless data[pe_offset, 4] == "PE\x00\x00".dup.force_encoding('BINARY')
+          sections_count = data[pe_offset + 6, 2].unpack('v').first.to_i
+          optional_size = data[pe_offset + 20, 2].unpack('v').first.to_i
+          optional_offset = pe_offset + 24
+          magic = data[optional_offset, 2].unpack('v').first.to_i
+          directories_offset = optional_offset + (magic == 0x20b ? 112 : 96)
+          sections_offset = optional_offset + optional_size
+          ranges = []
+          index = 0
+          while index < sections_count
+            entry = sections_offset + index * 40
+            virtual_size, virtual_address, raw_size, raw_address = data[entry + 8, 16].unpack('V4')
+            ranges << [virtual_address.to_i, raw_address.to_i, [virtual_size.to_i, raw_size.to_i].max]
+            index += 1
+          end
+          to_offset = lambda { |rva|
+            range = ranges.find { |virtual_address, _raw_address, size| rva >= virtual_address && rva < virtual_address + size }
+            range ? range[1] + (rva - range[0]) : nil
+          }
+          import_rva = data[directories_offset + 8, 4].unpack('V').first.to_i
+          return [] if import_rva == 0
+          names = []
+          offset = to_offset.call(import_rva)
+          while offset
+            descriptor = data[offset, 20].unpack('V5')
+            break if descriptor[3].to_i == 0
+            name_offset = to_offset.call(descriptor[3].to_i)
+            if name_offset
+              terminator = data.index("\x00".dup.force_encoding('BINARY'), name_offset)
+              if terminator
+                names << data[name_offset, terminator - name_offset].to_s.force_encoding('UTF-8')
+              end
+            end
+            offset += 20
+          end
+          names
+        rescue Exception
+          []
+        end
+
+        # Report the libraries a library depends on and whether they can be
+        # found. Used to diagnose a library that cannot be loaded.
+        # @param [String] path Path of the library.
+        # @param [Array<String>] search_paths Folders to look in.
+        # @return [String]
+        # @since 3.8.0
+        def describe_dependencies(path, search_paths = [])
+          names = dependencies(path)
+          return '' if names.empty?
+          folders = search_paths.dup
+          folders << ::File.dirname(path.to_s)
+          folders << ::File.join(ENV['SystemRoot'].to_s, 'System32') unless ENV['SystemRoot'].to_s.empty?
+          lines = ["Libraries #{::File.basename(path.to_s)} depends on:"]
+          missing = []
+          names.each { |name|
+            if get_module_handle(name).to_i > 0
+              lines << "  #{name} : loaded in SketchUp"
+            else
+              found = folders.compact.map { |folder|
+                candidate = ::File.join(folder, name)
+                ::File.exist?(candidate) ? candidate : nil
+              }.compact.first
+              if found
+                lines << "  #{name} : not loaded in SketchUp, file found at #{found}"
+              else
+                lines << "  #{name} : NOT FOUND"
+                missing << name
+              end
+            end
+          }
+          unless missing.empty?
+            lines << "The following libraries could not be found: #{missing.join(', ')}. " \
+                     "A library that depends on a missing library cannot be loaded."
+          end
+          lines.join("\n")
         end
 
         # Unload a dynamic library.

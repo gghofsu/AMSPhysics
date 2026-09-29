@@ -70,6 +70,13 @@ The report also records the versions, the folders the extension looks in, and
 whether the AMS Library fallback and the Windows API (Fiddle) are available.
 Attach that report when asking for help.
 
+When one of the libraries the engine needs cannot be loaded, the report names
+the library and the Windows error, and lists the libraries that the failing
+library itself depends on, together with whether each of them is loaded in
+SketchUp, exists as a file, or cannot be found. The dependencies are read from
+the import table of the library, so they are also reported when the Windows API
+cannot be called through Fiddle.
+
 The two most common causes are:
 
 * **AMS Library is outdated.** MSPhysics needs AMS Library 3.8.0 or later on Ruby

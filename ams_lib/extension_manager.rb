@@ -400,27 +400,56 @@ module AMS
       # of that library.
       dll_report = nil
       if !@libraries.empty? && AMS::IS_PLATFORM_WINDOWS
-        dll_report = "DLL Report:\n"
-        unloaded = []
+        dll_report = "Libraries:\n"
+        failed = []
+        reports_status = AMS::DLL.respond_to?(:load_library_info)
         @libraries.each { |data|
           fname = data[0] + l_ext
           fpath = ::File.join(lib_load_path, fname)
           fpath.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
-          if ::File.exist?(fpath)
-            handle = AMS::DLL.load_library(fpath)
-            dll_report << sprintf("%s : %s (handle %d)\n", fname, handle.to_i > 0 ? 'loaded' : 'FAILED', handle.to_i)
-            unloaded << fname if handle.to_i <= 0 && data[1]
-          else
+          if !::File.exist?(fpath)
             dll_report << sprintf("%s : missing%s\n", fname, data[1] ? ' (required)' : '')
-            unloaded << fname if data[1]
+            failed << [fname, data[1], 'The file does not exist.'] if data[1]
+          elsif reports_status
+            status, detail = AMS::DLL.load_library_info(fpath)
+            case status
+            when :loaded
+              dll_report << sprintf("%s : loaded (handle %d)\n", fname, detail.to_i)
+            when :unverified
+              dll_report << sprintf("%s : loaded, but the handle could not be verified (%s)\n", fname, detail)
+            else
+              dll_report << sprintf("%s : FAILED (%s)\n", fname, detail)
+              failed << [fname, data[1], detail] if data[1]
+            end
+          else
+            # An older AMS Library provides no detailed result.
+            handle = AMS::DLL.load_library(fpath)
+            if handle.to_i > 0
+              dll_report << sprintf("%s : loaded (handle %d)\n", fname, handle.to_i)
+            else
+              dll_report << sprintf("%s : FAILED\n", fname)
+              failed << [fname, data[1], 'The library could not be loaded.'] if data[1]
+            end
           end
         }
-        # Report the libraries that could not be loaded right away: the c
-        # extension will fail to load with an error that is much harder to
-        # diagnose (e.g. "The specified module could not be found").
-        unless unloaded.empty?
-          raise(IOError, "The required #{unloaded.size == 1 ? 'library' : 'libraries'}, " \
-            "#{unloaded.join(', ')}, could not be loaded into SketchUp!\n\n#{dll_report}")
+        # Report the required libraries that could not be loaded right away:
+        # the c extension of the extension will fail to load with an error that
+        # is much harder to diagnose, e.g. "The specified module could not be
+        # found", which does not name the library that is missing.
+        unless failed.empty?
+          names = failed.map { |name, _required, _detail| name }
+          msg = "The required #{names.size == 1 ? 'library' : 'libraries'} of " \
+                "#{@ext_name} could not be loaded into SketchUp! " \
+                "The engine of the extension cannot work without #{names.size == 1 ? 'it' : 'them'}.\n"
+          failed.each { |name, _required, detail| msg << "  - #{name}: #{detail}\n" }
+          msg << "\n#{dll_report}"
+          # The reason why a library cannot be loaded is often a library that
+          # that library depends on, so report what the first of them needs.
+          if AMS::DLL.respond_to?(:describe_dependencies)
+            report = AMS::DLL.describe_dependencies(::File.join(lib_load_path, failed.first[0]), [lib_load_path])
+            msg << "\n#{report}" unless report.to_s.empty?
+          end
+          raise(IOError, msg)
         end
       end
       # Load all c extensions in given order
@@ -428,15 +457,22 @@ module AMS
         fname = filename + c_ext
         fpath = ::File.join(ext_load_path, fname)
         if ::File.exist?(fpath)
+          cookie = nil
           begin
             # On Windows, the libraries the c extension links against have to
             # be loadable at this point; Windows does not look for them in the
             # folder of the c extension. Loading each library into the process
             # beforehand (see above) is the reliable way to do this. As a
-            # safety net, the folder that holds the libraries is also made the
-            # working directory for the duration of the require, as Windows
-            # looks for the dependencies of a library in the working directory.
-            if AMS::IS_PLATFORM_WINDOWS && dll_report && ::File.directory?(lib_load_path)
+            # safety net, the folder that holds the libraries is also made a
+            # part of the search path of the libraries of this process for the
+            # duration of the require.
+            if AMS::IS_PLATFORM_WINDOWS && defined?(AMS::FallbackHelper) &&
+               AMS::FallbackHelper.respond_to?(:add_dll_directory)
+              cookie = AMS::FallbackHelper.add_dll_directory(lib_load_path)
+            end
+            if AMS::IS_PLATFORM_WINDOWS && cookie.nil? && dll_report && ::File.directory?(lib_load_path)
+              # Windows looks for the libraries of a library in the working
+              # directory as well, unless the process restricts the search.
               ::Dir.chdir(lib_load_path) { ::Kernel.require(fpath) }
             else
               ::Kernel.require(fpath)
@@ -444,7 +480,16 @@ module AMS
           rescue LoadError => e
             msg = "An exception occurred while loading #{@ext_name}, version #{@ext_version}!\n\n#{e.message}"
             msg << "\n\n#{dll_report}" if dll_report
+            if AMS::DLL.respond_to?(:describe_dependencies)
+              report = AMS::DLL.describe_dependencies(fpath, [lib_load_path, ext_load_path])
+              msg << "\n\n#{report}" unless report.to_s.empty?
+            end
             raise(e.class, msg, caller)
+          ensure
+            if cookie && defined?(AMS::FallbackHelper) &&
+               AMS::FallbackHelper.respond_to?(:remove_dll_directory)
+              AMS::FallbackHelper.remove_dll_directory(cookie)
+            end
           end
         else
           abis = available_c_extension_abis(filename)

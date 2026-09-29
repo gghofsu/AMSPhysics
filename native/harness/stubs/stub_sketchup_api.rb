@@ -30,7 +30,13 @@ module StubSketchUp
     # Only actual native library files are skipped; plain Ruby files and
     # directories of the same name (e.g. the ams_lib folder) are loaded.
     return false unless path =~ /\.(so|bundle|dll|dylib)\z/
-    NATIVE_EXTENSIONS.include?(File.basename(path).sub(/\..*\z/, ''))
+    return true if NATIVE_EXTENSIONS.include?(File.basename(path).sub(/\..*\z/, ''))
+    # The libraries of the engine (newton.dll, SDL2.dll, ...) are loaded by
+    # AMS::DLL through the Windows API, which the harness does not have. A
+    # library that also has no Ruby entry point cannot be loaded here, so
+    # pretend that Windows loaded it, which is what the calling code has to
+    # deal with on a machine that has no Fiddle.
+    File.extname(path).downcase != '.so' && File.exist?(path)
   end
 end
 

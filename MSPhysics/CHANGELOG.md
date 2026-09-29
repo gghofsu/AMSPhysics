@@ -1,3 +1,19 @@
+## 1.1.3 - September 29, 2026
+- The libraries of the engine are loaded with LoadLibraryExW and the flags that
+  make Windows look for the libraries of a library in its own folder and in the
+  folder of the application, in addition to the system folders. This does not
+  depend on the search order of the process, which applications can restrict
+  (SketchUp 2023 and later are Qt based and use Chromium for the HTML dialogs).
+- The library report names the Windows error for every library that could not
+  be loaded, and no longer reports a library as loaded when that could not be
+  verified.
+- When the engine cannot be loaded, the report now lists the libraries it
+  depends on, together with whether each of them is loaded in SketchUp, exists
+  as a file, or cannot be found. The dependencies are read from the import
+  table of the engine, which does not require the Windows API.
+- The engine no longer imports memchr from the private API set of the Universal
+  CRT (api-ms-win-crt-private-l1-1-0.dll).
+
 ## 1.1.2 - September 29, 2026
 - Report the actual error when MSPhysics cannot be loaded: the error, its
   cause, the backtrace and the environment are printed to the Ruby console,

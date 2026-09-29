@@ -79,13 +79,40 @@ puts '== scene change wrapper (SketchUp 2026 undoable scene properties) =='
 model = Sketchup.active_model
 begin
   MSPhysics.wrap_scene_change('Test Op') { model.pages.add('Test Page') }
-  checks += 1
-  puts "  ok   wrap_scene_change balanced the operation (depth=#{model.operation_depth})"
+  puts "  ok   wrap_scene_change runs the block and closes its operation"
 rescue Exception => err
   failures << "wrap_scene_change: #{err.class}: #{err.message}"
   puts "  FAIL wrap_scene_change: #{err.class}: #{err.message}"
 end
-check(failures, 'operation depth after wrap') { model.operation_depth }
+check(failures, 'operation depth after wrap_scene_change') { model.operation_depth }
+check(failures, 'MSPhysics.operation_open? after wrap_scene_change') { MSPhysics.operation_open? }
+
+# While this extension has an operation open (the replay does this while the
+# recorded frames are applied), scene changes must not start another operation,
+# as operations cannot be nested.
+begin
+  # This is what the replay does: start an operation and tell the scene change
+  # wrapper about it.
+  model.start_operation('Replay Operation', true, false, false)
+  MSPhysics.open_operation
+  depth_open = model.operation_depth
+  MSPhysics.wrap_scene_change('Nested Op') { model.pages.add('Nested Page') }
+  depth_nested = model.operation_depth
+  MSPhysics.close_operation
+  model.commit_operation
+  depth_closed = model.operation_depth
+  if depth_open == 1 && depth_nested == 1 && depth_closed == 0
+    puts "  ok   wrap_scene_change does not nest into an open operation"
+  else
+    failures << "wrap_scene_change nested an operation (#{depth_open} -> #{depth_nested} -> #{depth_closed})"
+    puts "  FAIL wrap_scene_change does not nest into an open operation (#{depth_open} -> #{depth_nested} -> #{depth_closed})"
+  end
+rescue Exception => err
+  failures << "nested wrap_scene_change: #{err.class}: #{err.message}"
+  puts "  FAIL nested wrap_scene_change: #{err.class}: #{err.message}"
+end
+check(failures, 'MSPhysics.operation_open? after close_operation') { MSPhysics.operation_open? }
+check(failures, 'operation depth after nested wrap') { model.operation_depth }
 
 puts '== reply for the extension panels =='
 check(failures, 'MSPhysics::Dialog') { MSPhysics::Dialog }

@@ -93,6 +93,8 @@ module MSPhysics::Replay
         op = 'MSPhysics Replay'
         Sketchup.version.to_i > 6 ? model.start_operation(op, true, false, false) : model.start_operation(op)
         @wop_started = true
+        # Let the scene changes know that they are already inside an operation.
+        MSPhysics.open_operation
       end
       # Close active path
       if model.active_entities != model.entities
@@ -197,6 +199,7 @@ module MSPhysics::Replay
       @animation.deactivate_tool
       # Commit operation
       if @wop_started
+        MSPhysics.close_operation
         Sketchup.active_model.commit_operation
         @wop_started = false
       end
@@ -226,6 +229,8 @@ module MSPhysics::Replay
         op = 'MSPhysics Replay'
         Sketchup.version.to_i > 6 ? model.start_operation(op, true, false, false) : model.start_operation(op)
         @wop_started = true
+        # Let the scene changes know that they are already inside an operation.
+        MSPhysics.open_operation
       end
       # Stop animation
       @animation.deactivate_tool
@@ -327,6 +332,7 @@ module MSPhysics::Replay
       @shadow_data.delete(:original)
       # Commit operation
       if @wop_started
+        MSPhysics.close_operation
         model.commit_operation
         @wop_started = false
       end
@@ -348,6 +354,8 @@ module MSPhysics::Replay
         op = 'MSPhysics Replay'
         Sketchup.version.to_i > 6 ? model.start_operation(op, true, false, false) : model.start_operation(op)
         @wop_started = true
+        # Let the scene changes know that they are already inside an operation.
+        MSPhysics.open_operation
       end
       # Hide trays
       AMS::Sketchup.show_trays(false) if AMS::IS_PLATFORM_WINDOWS
@@ -364,6 +372,7 @@ module MSPhysics::Replay
       @paused = true
       # Commit operation
       if @wop_started
+        MSPhysics.close_operation
         Sketchup.active_model.commit_operation
         @wop_started = false
       end

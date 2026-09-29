@@ -411,25 +411,55 @@ module MSPhysics
       model = ::Sketchup.active_model
       return yield if model.nil?
       started = false
-      if @scene_op_depth.to_i == 0
+      # Nothing to do when a change is already being wrapped, or when this
+      # extension has an operation open (the replay, for example, holds one open
+      # while the recorded frames are applied): operations cannot be nested, so
+      # starting another one would implicitly close the open one.
+      unless operation_open?
         begin
           started = ::Sketchup.version.to_i > 6 ? model.start_operation(op_name, true, false, true) : model.start_operation(op_name)
         rescue StandardError
           started = false
         end
-        @scene_op_depth = @scene_op_depth.to_i + 1 if started
+        open_operation if started
       end
       begin
         yield
       ensure
         if started
-          @scene_op_depth -= 1
+          close_operation
           begin
             model.commit_operation
           rescue StandardError
           end
         end
       end
+    end
+
+    # Determine whether this extension currently has an operation open.
+    # @return [Boolean]
+    # @since 1.1.1
+    def operation_open?
+      @open_operation_count.to_i > 0
+    end
+
+    # Mark an operation as opened. Scene changes performed inside of it are not
+    # wrapped into another operation, as operations in SketchUp cannot be
+    # nested.
+    # @return [Boolean] true
+    # @since 1.1.1
+    def open_operation
+      @open_operation_count = @open_operation_count.to_i + 1
+      true
+    end
+
+    # Mark an operation as closed.
+    # @return [Boolean] true
+    # @since 1.1.1
+    def close_operation
+      @open_operation_count = @open_operation_count.to_i - 1
+      @open_operation_count = 0 if @open_operation_count < 0
+      true
     end
 
     # Get common attribute value from a collection of entities.

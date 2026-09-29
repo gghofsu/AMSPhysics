@@ -40,16 +40,21 @@ on the current SketchUp releases:
 | --- | --- |
 | `MSPhysics.rb`, `MSPhysics/` | The extension itself, including the staged native libraries in `MSPhysics/libraries/stage/`. |
 | `ams_lib.rb`, `ams_lib/` | AMS Library, the dependency that provides the window, keyboard, MIDI and geometry helpers. |
-| `build/` | Scripts that download the C++ sources and cross-build the Windows x64 Ruby 3.2 native libraries with Zig. See `build/build_win64_ruby32.sh`. |
+| `tools/` | Scripts that download the C++ sources and cross-build the Windows x64 Ruby 3.2 native libraries with Zig. See `tools/build_win64_ruby32.sh`. |
 | `native/harness/` | Development harness that loads the extension on Ruby 3.2 with a stubbed SketchUp API. See `native/harness/README.md`. |
 
 ## Building the native extension
 
 ```sh
 pip install ziglang                    # or set ZIG=/path/to/zig
-build/prepare_sources.sh               # downloads the C++ sources and patches them
-build/build_win64_ruby32.sh            # builds msp_lib.so + newton.dll and installs them
+tools/prepare_sources.sh               # downloads the C++ sources and patches them
+tools/build_win64_ruby32.sh            # builds msp_lib.so + newton.dll and installs them
 ```
+
+The sources are downloaded to `tools/src`, the output is written to `tools/out`
+and installed into `MSPhysics/libraries/stage/win64/3.2/`. `msp_lib.so` and
+`newton.dll` must be shipped as a pair, as both are built from the same
+sources.
 
 ## Testing
 

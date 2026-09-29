@@ -1,0 +1,27 @@
+Allow the MSPhysics sources to be compiled with non-MSVC toolchains (clang,
+GCC, MinGW), which is what the cross-build script uses.
+
+--- a/C++Extension/Source/main/ruby_prep.h
++++ b/C++Extension/Source/main/ruby_prep.h
+@@ -3,8 +3,8 @@
+ #ifndef RUBY_PREP_H
+ #define RUBY_PREP_H
+ 
+-#ifdef _MSC_VER
+-    #ifdef _M_X64
++#if defined(_WIN32) || defined(_WIN64) || defined(__MINGW32__) || defined(__MINGW64__)
++    #if defined(_WIN64) || defined(_M_X64) || defined(__x86_64__)
+         #ifndef _WIN_64_VER
+             #define _WIN_64_VER
+         #endif
+@@ -20,7 +20,9 @@
+ #endif
+ 
+ #if (defined (_WIN_32_VER) || defined (_WIN_64_VER))
+-    #include <intrin.h>
++    #if defined(_MSC_VER)
++        #include <intrin.h>
++    #endif
+     #include <emmintrin.h>
+ #endif
+ 

@@ -41,6 +41,12 @@ Any other Ruby script can be run the same way; the repository is available as
 the virtual file system root, so `require 'MSPhysics.rb'` and
 `require 'ams_lib/main'` work as they do in SketchUp.
 
+All of the tests can also be run at once:
+
+```sh
+native/harness/run_tests.sh
+```
+
 ## Layout
 
 | Path | Purpose |

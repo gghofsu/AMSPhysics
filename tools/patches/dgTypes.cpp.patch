@@ -1,0 +1,14 @@
+Use the Windows high resolution timer whenever compiling for Windows, not only
+when compiling with MSVC.
+
+--- a/C++Extension/ThirdParty/NewtonDynamics/dgCore/dgTypes.cpp
++++ b/C++Extension/ThirdParty/NewtonDynamics/dgCore/dgTypes.cpp
+@@ -28,7 +28,7 @@
+ 
+ dgUnsigned64 dgGetTimeInMicrosenconds()
+ {
+-#ifdef _MSC_VER
++#if defined(_MSC_VER) || defined(_WIN32)
+ 	static LARGE_INTEGER frequency;
+ 	static LARGE_INTEGER baseCount;
+ 	if (!frequency.QuadPart) {

@@ -58,15 +58,24 @@ sources.
 
 ## Testing
 
+The whole suite runs on CRuby 3.2 (the Ruby version of SketchUp 2024-2026) in
+WebAssembly, with a stubbed SketchUp 2026 API. `node` and the packages listed in
+`native/harness/README.md` are required.
+
 ```sh
-# Compile every Ruby file with CRuby 3.2 (the Ruby version of SketchUp 2024-2026)
-node native/harness/run_wasm.js native/harness/tests/test_compile.rb
+native/harness/run_tests.sh
+```
 
-# Load the extension against a stubbed SketchUp 2026 / Ruby 3.2
-node native/harness/run_wasm.js native/harness/tests/test_load.rb
+It checks that every Ruby file compiles, that the extension loads through its
+normal entry points, that the AMS Library fallback implements the API MSPhysics
+uses, that an engine is staged for the supported SketchUp versions and that the
+staging copies the right files for the running Ruby version.
 
-# Exercise the AMS Library fallback
-node native/harness/run_wasm.js native/harness/tests/test_ams_fallback.rb
+SketchUp announced that it will move to Ruby 3.4; the same suite also runs on
+that version, where the missing engine is expected to be reported:
+
+```sh
+native/harness/run_tests.sh --ruby 3.4
 ```
 
 ## Credits and licence

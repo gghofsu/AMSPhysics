@@ -429,7 +429,18 @@ module AMS
         fpath = ::File.join(ext_load_path, fname)
         if ::File.exist?(fpath)
           begin
-            ::Kernel.require(fpath)
+            # On Windows, the libraries the c extension links against have to
+            # be loadable at this point; Windows does not look for them in the
+            # folder of the c extension. Loading each library into the process
+            # beforehand (see above) is the reliable way to do this. As a
+            # safety net, the folder that holds the libraries is also made the
+            # working directory for the duration of the require, as Windows
+            # looks for the dependencies of a library in the working directory.
+            if AMS::IS_PLATFORM_WINDOWS && dll_report && ::File.directory?(lib_load_path)
+              ::Dir.chdir(lib_load_path) { ::Kernel.require(fpath) }
+            else
+              ::Kernel.require(fpath)
+            end
           rescue LoadError => e
             msg = "An exception occurred while loading #{@ext_name}, version #{@ext_version}!\n\n#{e.message}"
             msg << "\n\n#{dll_report}" if dll_report

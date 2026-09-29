@@ -111,6 +111,50 @@ module AMS
       @libraries << [filename, false]
     end
 
+    # Get the Ruby ABI version of the running SketchUp, e.g. "3.2".
+    # @return [String]
+    # @since 3.8.0
+    def ruby_abi_version
+      RUBY_VERSION[0..2].to_s
+    end
+
+    # Get all Ruby ABI versions for which a build of the given c extension is
+    # present in the stage directory.
+    # @param [String] filename C extension filename.
+    # @return [Array<String>]
+    # @since 3.8.0
+    def available_c_extension_abis(filename)
+      filename = normalize_filename(filename)
+      ops = AMS::IS_PLATFORM_WINDOWS ? 'win' : 'osx'
+      bit = AMS::IS_SKETCHUP_64BIT ? '64' : '32'
+      c_ext = AMS::IS_PLATFORM_WINDOWS ? '.so' : '.bundle'
+      dir = ::File.join(@ext_path, 'libraries', 'stage', ops + bit)
+      return [] unless ::File.directory?(dir)
+      ::Dir.entries(dir).select { |entry|
+        ::File.exist?(::File.join(dir, entry, filename + c_ext))
+      }.sort
+    end
+
+    # Determine whether a native build of the given c extension is available
+    # for the Ruby ABI version used by the running SketchUp.
+    # @param [String] filename C extension filename.
+    # @return [Boolean]
+    # @since 3.8.0
+    def c_extension_available?(filename)
+      available_c_extension_abis(filename).include?(ruby_abi_version)
+    end
+
+    # Normalize the given filename by stripping the path and the file
+    # extension.
+    # @param [String] filename
+    # @return [String]
+    # @since 3.8.0
+    def normalize_filename(filename)
+      filename = filename.to_s.dup
+      filename.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
+      ::File.basename(filename).gsub(/\.(so|bundle|dll|dylib|rb|rbs|rbe)$/i, '')
+    end
+
     # Add a Ruby file that will be required and ignored from cleanup.
     # @param [String] filename Ruby filename.
     # @note All added rubies are loaded last in the order they are added.
@@ -148,6 +192,16 @@ module AMS
       stage_lib_path = ::File.join(stage_path, ops + bit)
       stage_ext_path = ::File.join(stage_lib_path, rbv)
 
+      # Libraries, such as newton.dll, can be overridden per Ruby ABI version by
+      # placing them in <i>libraries/stage/PLATFORM + BIT/RUBY_VERSION/</i>.
+      # This allows shipping libraries that are compatible with only certain
+      # Ruby versions, e.g. different builds of one and the same library
+      # compiled against different C runtime libraries.
+      lib_stage_source = lambda { |fname|
+        abi_fpath = ::File.join(stage_lib_path, rbv, fname)
+        ::File.exist?(abi_fpath) ? abi_fpath : ::File.join(stage_lib_path, fname)
+      }
+
       version_path = ::File.join(@ext_path, 'libraries', @ext_version)
       version_lib_path = ::File.join(version_path, ops + bit)
       version_ext_path = ::File.join(version_lib_path, rbv)
@@ -163,7 +217,7 @@ module AMS
       @libraries.each { |data|
         next unless data[1]
         fpath = ::File.join(version_lib_path, data[0] + l_ext)
-        unless ::File.exists?(fpath)
+        unless ::File.exist?(fpath)
           libraries_exist = false
           break
         end
@@ -171,7 +225,7 @@ module AMS
       if libraries_exist
         @c_extensions.each { |filename|
           fpath = ::File.join(version_ext_path, filename + c_ext)
-          unless ::File.exists?(fpath)
+          unless ::File.exist?(fpath)
             libraries_exist = false
             break
           end
@@ -184,7 +238,7 @@ module AMS
         @libraries.each { |data|
           next unless data[1]
           fpath = ::File.join(temp_version_lib_path, data[0] + l_ext)
-          if ::File.exists?(fpath)
+          unless ::File.exist?(fpath)
             libraries_exist = false
             break
           end
@@ -192,7 +246,7 @@ module AMS
         if libraries_exist
           @c_extensions.each { |filename|
             fpath = ::File.join(temp_version_ext_path, filename + c_ext)
-            unless ::File.exists?(fpath)
+            unless ::File.exist?(fpath)
               libraries_exist = false
               break
             end
@@ -208,14 +262,14 @@ module AMS
         end
         @libraries.each { |data|
           next unless data[1]
-          fpath = ::File.join(stage_lib_path, data[0] + l_ext)
-          unless ::File.exists?(fpath)
+          fpath = lib_stage_source.call(data[0] + l_ext)
+          unless ::File.exist?(fpath)
             raise(IOError, "The required, staged library file, \"#{fpath}\", is missing!")
           end
         }
         @c_extensions.each { |filename|
           fpath = ::File.join(stage_ext_path, filename + c_ext)
-          unless ::File.exists?(fpath)
+          unless ::File.exist?(fpath)
             raise(IOError, "The required, staged c extension file, \"#{fpath}\", is missing!")
           end
         }
@@ -233,14 +287,14 @@ module AMS
           # Attempt to copy all the library stage files to version_lib_path
           @libraries.each { |data|
             fname = data[0] + l_ext
-            src_path = ::File.join(stage_lib_path, fname)
+            src_path = lib_stage_source.call(fname)
             dst_path = ::File.join(version_lib_path, fname)
             # Skip if the file is already copied; or overwrite with a newer version.
-            #~ next if ::File.exists?(dst_path)
+            #~ next if ::File.exist?(dst_path)
             # Skip if the file is optional and doesn't exist at stage.
             # If the file is required and doesn't exist at stage,
             # the IOError is raised in code above.
-            next if !data[1] && !::File.exists?(src_path)
+            next if !data[1] && !::File.exist?(src_path)
             # Otherwise copy from stage_lib_path to version_lib_path.
             begin
               FileUtils.copy_file(src_path, dst_path)
@@ -284,14 +338,14 @@ module AMS
             # Attempt to copy all the library stage files to the temp_version_lib_path.
             @libraries.each { |data|
               fname = data[0] + l_ext
-              src_path = ::File.join(stage_lib_path, fname)
+              src_path = lib_stage_source.call(fname)
               dst_path = ::File.join(temp_version_lib_path, fname)
               # Skip if the file is already copied; or overwrite with a newer version.
-              #~ next if ::File.exists?(dst_path)
+              #~ next if ::File.exist?(dst_path)
               # Skip if the file is optional and doesn't exist at stage.
               # If the file is required and doesn't exist at stage,
               # the IOError is raised in code above.
-              next if !data[1] && !::File.exists?(src_path)
+              next if !data[1] && !::File.exist?(src_path)
               # Copy from stage_lib_path to temp_version_lib_path
               begin
                 FileUtils.copy_file(src_path, dst_path)
@@ -346,7 +400,7 @@ module AMS
           fname = data[0] + l_ext
           fpath = ::File.join(lib_load_path, fname)
           fpath.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
-          if ::File.exists?(fpath)
+          if ::File.exist?(fpath)
             dll_report << sprintf("%s : %d\n", fname, AMS::DLL.load_library(fpath))
           else
             dll_report << sprintf("%s : missing\n", fname)
@@ -357,7 +411,7 @@ module AMS
       @c_extensions.each { |filename|
         fname = filename + c_ext
         fpath = ::File.join(ext_load_path, fname)
-        if ::File.exists?(fpath)
+        if ::File.exist?(fpath)
           begin
             ::Kernel.require(fpath)
           rescue LoadError => e
@@ -366,7 +420,13 @@ module AMS
             raise(e.class, msg, caller)
           end
         else
-          raise(IOError, "The required c extension file, \"#{fpath}\", is missing!")
+          abis = available_c_extension_abis(filename)
+          msg = "The c extension, \"#{filename}#{c_ext}\", is missing for Ruby #{rbv} on #{ops}#{bit}!"
+          msg << " Native builds are available for Ruby: #{abis.join(', ')}." unless abis.empty?
+          msg << " Expected file: #{fpath}"
+          msg << " The extension has to be rebuilt for Ruby #{rbv}, or a pure-Ruby" \
+                 " fallback implementation has to be used instead."
+          raise(IOError, msg)
         end
       }
       # Require all the rubies in given order

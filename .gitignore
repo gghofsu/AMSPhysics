@@ -1,0 +1,6 @@
+# Native build workspace (see build/)
+build/src/
+build/obj/
+build/out/
+build/compat/
+build/*.def

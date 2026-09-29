@@ -1,5 +1,3 @@
-require 'MSPhysics.rb'
-
 # Ensure standard Set is loaded
 if Sketchup.version.to_i >= 14
   Sketchup.require 'set'
@@ -24,7 +22,7 @@ if AMS::IS_PLATFORM_WINDOWS
 else
   ext_manager.add_required_library('libSDL2-2.0.0')
   ext_manager.add_required_library('libSDL2_mixer-2.0.0')
-  ext_manager.add_required_library('libnewton')
+  ext_manager.add_required_library('newton')
 end
 ext_manager.add_c_extension('msp_lib')
 ext_manager.add_ruby_no_require('main')
@@ -68,7 +66,7 @@ ext_manager.add_ruby('gear_connection_tool')
 ext_manager.add_ruby('replay')
 ext_manager.add_ruby('scene_data')
 ext_manager.require_all
-ext_manager.clean_up(true)
+ext_manager.clean_up(false)
 
 # @since 1.0.0
 module MSPhysics
@@ -226,7 +224,6 @@ module MSPhysics
     :gravity                    => -9.801,  # in m/s/s along Z-axis
     :material_thickness         => 0.002,   # thickness b/w 0.0 and 1/32 meters
     :contact_merge_tolerance    => 0.005,   # 0.001+
-    :world_scale                => 9,       # 1 - 100
     :continuous_collision_check => false,   # boolean
     :full_screen_mode           => false,   # boolean
     :ignore_hidden_instances    => false,   # boolean
@@ -351,6 +348,90 @@ module MSPhysics
 
   class << self
 
+    # Determine whether the given value is a large integer, which Ruby versions
+    # prior to 2.4 would have represented using the Bignum class. Ruby 3.2 has
+    # removed the Bignum and Fixnum constants. Large integers are stored as
+    # strings so that they do not lose precision.
+    # @param [Object] val
+    # @return [Boolean]
+    # @since 1.1.1
+    def large_integer?(val)
+      return val.to_i.is_a?(Bignum) if defined?(Bignum)
+      val.to_i.abs > 0x3fffffff
+    end
+
+    # Set a value in a shadow info collection, ignoring the keys that are
+    # invalid or read-only.
+    #
+    # SketchUp 2026.1 makes Sketchup::ShadowInfo#[]= stricter: it raises a
+    # KeyError for invalid or read-only keys, and a TypeError for values of an
+    # incorrect type. As MSPhysics iterates over all the shadow info keys when
+    # restoring or transitioning scenes, values that cannot be set are skipped.
+    # @param [Sketchup::ShadowInfo] shadow_info
+    # @param [String] key
+    # @param [Object] value
+    # @return [Boolean] true if the value was set.
+    # @since 1.1.1
+    def set_shadow_info(shadow_info, key, value)
+      shadow_info[key] = value
+      true
+    rescue KeyError, TypeError
+      false
+    end
+
+    # Invert the given transformation, returning an identity transformation
+    # when it cannot be inverted.
+    #
+    # SketchUp 2026 raises an ArgumentError when inverting a non-invertible
+    # transformation, e.g. one with a zero scale. Rather than aborting the whole
+    # simulation, fall back to the identity transformation.
+    # @param [Geom::Transformation] tra
+    # @return [Geom::Transformation]
+    # @since 1.1.1
+    def invert_transform(tra)
+      tra.inverse
+    rescue ArgumentError
+      Geom::Transformation.new
+    end
+
+    # Execute the given block with the scene (page) changes wrapped within a
+    # transparent operation.
+    #
+    # SketchUp 2026 turned the modification of the properties of a
+    # Sketchup::Page into an undoable operation and expects scene changes to be
+    # performed between Model#start_operation and Model#commit_operation, so
+    # that the undo stack is not flooded with entries. A transparent operation
+    # appends to the previous operation instead of adding a new item onto the
+    # undo stack, which is the desired behavior for the scene animations
+    # performed by this extension.
+    # @param [String] op_name Name of the operation.
+    # @return [Object] The value returned by the block.
+    # @since 1.1.1
+    def wrap_scene_change(op_name = 'MSPhysics Scene Change')
+      model = ::Sketchup.active_model
+      return yield if model.nil?
+      started = false
+      if @scene_op_depth.to_i == 0
+        begin
+          started = ::Sketchup.version.to_i > 6 ? model.start_operation(op_name, true, false, true) : model.start_operation(op_name)
+        rescue StandardError
+          started = false
+        end
+        @scene_op_depth = @scene_op_depth.to_i + 1 if started
+      end
+      begin
+        yield
+      ensure
+        if started
+          @scene_op_depth -= 1
+          begin
+            model.commit_operation
+          rescue StandardError
+          end
+        end
+      end
+    end
+
     # Get common attribute value from a collection of entities.
     # @param [Array<Sketchup::Entity>] ents A collection of entities.
     # @param [String] handle Dictionary name.
@@ -465,20 +546,20 @@ module MSPhysics
     end
 
     # Get float size of the Newton Dynamics physics SDK.
-    # @return [Fixnum]
+    # @return [Integer]
     def newton_float_size
       MSPhysics::Newton.get_float_size
     end
 
     # Get memory used by the Newton Dynamics physics SDK at the current time.
-    # @return [Fixnum]
+    # @return [Integer]
     def newton_memory_used
       MSPhysics::Newton.get_memory_used
     end
 
     # Create a watermark text.
-    # @param [Fixnum] x X position on screen.
-    # @param [Fixnum] y Y position on screen.
+    # @param [Integer] x X position on screen.
+    # @param [Integer] y Y position on screen.
     # @param [String] text Watermark text.
     # @param [String] name Watermark name.
     # @param [String] component Watermark component.
@@ -488,7 +569,7 @@ module MSPhysics
       ext_dir = File.dirname(__FILE__)
       ext_dir.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
       path = File.join(ext_dir, "models/#{component}")
-      return unless File.exists?(path)
+      return unless File.exist?(path)
       model = Sketchup.active_model
       view = model.active_view
       cd = model.definitions.load(path)
@@ -514,8 +595,8 @@ module MSPhysics
     end
 
     # Create a watermark text without material or layer.
-    # @param [Fixnum] x X position on screen.
-    # @param [Fixnum] y Y position on screen.
+    # @param [Integer] x X position on screen.
+    # @param [Integer] y Y position on screen.
     # @param [String] text Watermark text.
     # @param [String] name Watermark name.
     # @param [String] component Watermark component.
@@ -525,7 +606,7 @@ module MSPhysics
       ext_dir = File.dirname(__FILE__)
       ext_dir.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
       path = File.join(ext_dir, "models/#{component}")
-      return unless File.exists?(path)
+      return unless File.exist?(path)
       model = Sketchup.active_model
       view = model.active_view
       cd = model.definitions.load(path)
@@ -789,7 +870,11 @@ unless file_loaded?(__FILE__)
   sim_toolbar = UI::Toolbar.new('MSPhysics')
 
   cmd = UI::Command.new('Toggle UI') {
-    MSPhysics::Dialog.open(!MSPhysics::Dialog.open?)
+    if MSPhysics::Dialog.open?
+	  MSPhysics::Dialog.close
+	else
+      MSPhysics::Dialog.open
+	end
   }
   cmd.set_validation_proc {
     next MF_GRAYED unless Sketchup.active_model

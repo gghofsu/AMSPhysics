@@ -13,7 +13,11 @@ This makes it possible to check, without a SketchUp installation, that
   `ams_lib.rb`/`ams_lib/main.rb` → `MSPhysics/main.rb` → dialogs, control
   panel, replay and settings,
 * the pure Ruby fallback of AMS Library implements the API that MSPhysics uses
-  (`tests/test_ams_fallback.rb`).
+  (`tests/test_ams_fallback.rb`),
+* the staged native engines cover the supported SketchUp versions
+  (`tests/test_abi_gate.rb`),
+* the AMS::ExtensionManager staging logic copies the right files for the Ruby
+  version of the running SketchUp (`tests/test_extension_manager.rb`).
 
 What it does **not** cover: the native libraries (`msp_lib.so`, `newton.dll`,
 `ams_lib.so`) are not loaded, so no simulation, no real window handling and no

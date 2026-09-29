@@ -1,3 +1,27 @@
+## 1.1.1 - September 29, 2026
+- Updated for SketchUp 2024-2026, which use Ruby 3.2.
+- Added a native engine (msp_lib + newton) for Ruby 3.2 on Windows x64, built
+  against the UCRT based x64-ucrt-ruby320.
+- Modifying scene properties (page camera, axes, rendering options, shadow
+  info) is an undoable operation in SketchUp 2026. Scene animations and scene
+  transitions now wrap these changes into a transparent operation.
+- Sketchup::ShadowInfo#[]= is stricter in SketchUp 2026.1 and raises a KeyError
+  for invalid or read-only keys; such keys are now skipped when restoring or
+  transitioning scenes. Fixed the SunDirection transition writing into the
+  rendering options instead of the shadow info.
+- Inverting a non-invertible transformation raises an ArgumentError in
+  SketchUp 2026.0; the extension now falls back to an identity transformation
+  instead of interrupting the simulation.
+- Large integer attribute values are detected without the Bignum constant,
+  which Ruby 3.2 removed.
+- The extension reports a missing AMS Library or a missing native engine for
+  the running Ruby version instead of failing with a LoadError on start-up.
+  Apple Silicon users are pointed at the Intel (x86_64) build, which runs under
+  Rosetta.
+- Updated the bundled AMS Library to 3.8.0, which provides a pure Ruby fallback
+  for the native part of the library (needed as there is no native build for
+  Ruby 3.2 yet).
+
 ## 1.0.3 - October 16, 2017
 - Improved joint connection tool. Now closest joints are determined by closest
   distance to object's bounding box rather than distance to object's center.

@@ -47,12 +47,17 @@ function buildDirectory(hostDir, filter) {
   return dir;
 }
 
+// Directories that are not part of the extension (SCCS metadata, the optional
+// YARD documentation, downloaded build sources and build output).
+const SKIP_DIRS = ['.git', 'node_modules', 'doc', 'src', 'obj', 'out', 'compat', 'build', 'dist', 'target'];
 const skip = (full, name) =>
-  name !== '.git' && name !== 'node_modules' && name !== 'doc' && !name.endsWith('.zip');
+  !SKIP_DIRS.includes(name) && !(name.endsWith('.zip') && name.startsWith('msphysics'));
+
+const skipFile = (name) => !name.endsWith('.zip');
 
 const root = buildDirectory(ROOT, (full, name, entry) => {
   if (entry.isDirectory()) return skip(full, name);
-  return true;
+  return skipFile(name);
 });
 // Merge the stub SketchUp API into the root directory.
 for (const entry of fs.readdirSync(STUBS)) {

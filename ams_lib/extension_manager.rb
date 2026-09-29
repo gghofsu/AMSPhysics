@@ -393,19 +393,35 @@ module AMS
         ext_load_path = temp_version_ext_path
       end
       # Load all libraries in given order
+      #
+      # On Windows the libraries the c extension links against have to be
+      # loaded into the process before the c extension itself is required, as
+      # Windows does not look for the dependencies of a library in the folder
+      # of that library.
       dll_report = nil
       if !@libraries.empty? && AMS::IS_PLATFORM_WINDOWS
         dll_report = "DLL Report:\n"
+        unloaded = []
         @libraries.each { |data|
           fname = data[0] + l_ext
           fpath = ::File.join(lib_load_path, fname)
           fpath.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
           if ::File.exist?(fpath)
-            dll_report << sprintf("%s : %d\n", fname, AMS::DLL.load_library(fpath))
+            handle = AMS::DLL.load_library(fpath)
+            dll_report << sprintf("%s : %s (handle %d)\n", fname, handle.to_i > 0 ? 'loaded' : 'FAILED', handle.to_i)
+            unloaded << fname if handle.to_i <= 0 && data[1]
           else
-            dll_report << sprintf("%s : missing\n", fname)
+            dll_report << sprintf("%s : missing%s\n", fname, data[1] ? ' (required)' : '')
+            unloaded << fname if data[1]
           end
         }
+        # Report the libraries that could not be loaded right away: the c
+        # extension will fail to load with an error that is much harder to
+        # diagnose (e.g. "The specified module could not be found").
+        unless unloaded.empty?
+          raise(IOError, "The required #{unloaded.size == 1 ? 'library' : 'libraries'}, " \
+            "#{unloaded.join(', ')}, could not be loaded into SketchUp!\n\n#{dll_report}")
+        end
       end
       # Load all c extensions in given order
       @c_extensions.each { |filename|

@@ -1,3 +1,21 @@
+## 1.1.2 - September 29, 2026
+- Report the actual error when MSPhysics cannot be loaded: the error, its
+  cause, the backtrace and the environment are printed to the Ruby console,
+  saved next to the extension as load_error.txt, and shown to the user. This
+  matters because SketchUp may replace the error raised by an extension with a
+  less helpful one in its extension error report.
+- MSPhysics fails with a readable message when one of the libraries its engine
+  needs (newton.dll, SDL2.dll, SDL2_mixer.dll) cannot be loaded into SketchUp,
+  instead of failing later with "The specified module could not be found".
+- The native libraries are loaded through Ruby's own loader when the Windows
+  API cannot be called through Fiddle.
+- An outdated AMS Library (3.7.1b and before) is no longer used on Ruby 3, as
+  it relies on methods that were removed in Ruby 3 (File.exists? for example).
+  The copy of AMS Library bundled with MSPhysics is loaded instead, and the
+  problem is reported with instructions when that is not possible either.
+- The copy of AMS Library bundled with MSPhysics no longer fails when the
+  library installed next to it cannot be loaded.
+
 ## 1.1.1 - September 29, 2026
 - Updated for SketchUp 2024-2026, which use Ruby 3.2.
 - Added a native engine (msp_lib + newton) for Ruby 3.2 on Windows x64, built

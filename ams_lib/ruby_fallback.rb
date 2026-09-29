@@ -174,16 +174,50 @@ unless AMS.const_defined?(:DLL, false)
         # @since 3.8.0
         def load_library(path)
           path = path.to_s
-          return 0 unless AMS::FallbackHelper::WIN32_AVAILABLE
           return @loaded[path] if @loaded.key?(path)
-          wpath = AMS::FallbackHelper.wide_string(path)
-          return 0 unless wpath
-          handle = AMS::FallbackHelper.call_win32('kernel32', 'LoadLibraryW',
-            [Fiddle::TYPE_VOIDP], Fiddle::TYPE_VOIDP, wpath)
-          handle = handle.to_i
-          handle = 0 if handle < 0
+          handle = 0
+          if AMS::FallbackHelper::WIN32_AVAILABLE
+            wpath = AMS::FallbackHelper.wide_string(path)
+            if wpath
+              value = AMS::FallbackHelper.call_win32('kernel32', 'LoadLibraryW',
+                [Fiddle::TYPE_VOIDP], Fiddle::TYPE_VOIDP, wpath)
+              value = value.to_i
+              handle = value < 0 ? 0 : value
+            end
+          end
+          # Load the library through Ruby's own loader, which also has to load
+          # the library into the process before the c extension is required.
+          # Ruby calls LoadLibrary before it looks up the Init_ function of the
+          # library, so a library that is not a Ruby extension remains loaded
+          # even though that lookup fails. This is what makes the native part of
+          # MSPhysics work on installations where the Windows API cannot be
+          # called through Fiddle.
+          if handle.to_i <= 0 && AMS::IS_PLATFORM_WINDOWS && ::File.exist?(path)
+            handle = load_library_via_require(path)
+          end
           @loaded[path] = handle
           handle
+        end
+
+        # Load a library through Ruby's require, which does not return a handle.
+        # @param [String] path
+        # @return [Fixnum] A handle, or +0+ when the library could not be
+        #   loaded.
+        # @since 3.8.0
+        def load_library_via_require(path)
+          begin
+            ::Kernel.require(path)
+          rescue LoadError
+            # Ruby raises a LoadError for a library that does not export an
+            # Init_ function, which is the case for newton.dll and the SDL2
+            # libraries. Such a library has already been loaded at this point.
+            nil
+          rescue Exception
+            return 0
+          end
+          name = ::File.basename(path)
+          handle = get_module_handle(name)
+          handle.to_i > 0 ? handle : 1
         end
 
         # Unload a dynamic library.

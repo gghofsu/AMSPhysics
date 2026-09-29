@@ -5,7 +5,16 @@ plugin_file = File.expand_path('../../ams_Lib', cfpath)
 # Some installations use a lower case folder name. This matters on case
 # sensitive file systems.
 plugin_file = File.expand_path('../../ams_lib', cfpath) unless File.exist?(plugin_file + '.rb')
-Sketchup.require plugin_file
+begin
+  Sketchup.require plugin_file
+rescue Exception => err
+  # The AMS Library installed next to this extension could not be loaded, e.g.
+  # because it is outdated and does not support the Ruby version used by the
+  # running SketchUp. Continue with the copy bundled with this extension, which
+  # is loaded right after this block.
+  msg = "[AMS Library] Could not load #{plugin_file}: #{err.class}: #{err.message}"
+  puts msg
+end
 
 # AMS is a top level namespace of AMS Library.
 # @since 1.0.0

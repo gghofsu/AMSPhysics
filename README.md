@@ -56,6 +56,30 @@ and installed into `MSPhysics/libraries/stage/win64/3.2/`. `msp_lib.so` and
 `newton.dll` must be shipped as a pair, as both are built from the same
 sources.
 
+## Troubleshooting
+
+When MSPhysics fails to load, it reports the actual error instead of leaving it
+to SketchUp's extension error report, which may replace the error with a less
+helpful one:
+
+* the error, its cause and the backtrace are printed to the Ruby console,
+* they are saved next to the extension as `MSPhysics/load_error.txt`,
+* and the most important part is shown in a message box.
+
+The report also records the versions, the folders the extension looks in, and
+whether the AMS Library fallback and the Windows API (Fiddle) are available.
+Attach that report when asking for help.
+
+The two most common causes are:
+
+* **AMS Library is outdated.** MSPhysics needs AMS Library 3.8.0 or later on Ruby
+  3, which SketchUp 2024 and later use. Older versions (3.7.1b and before) rely
+  on methods that were removed in Ruby 3. Reinstalling MSPhysics installs the
+  bundled AMS Library 3.8.0 alongside it.
+* **A library of the engine could not be loaded.** The message names the library
+  and lists whether each of the `newton.dll`, `SDL2.dll` and `SDL2_mixer.dll`
+  libraries could be loaded.
+
 ## Testing
 
 The whole suite runs on CRuby 3.2 (the Ruby version of SketchUp 2024-2026) in

@@ -114,6 +114,25 @@ end
 check(failures, 'MSPhysics.operation_open? after close_operation') { MSPhysics.operation_open? }
 check(failures, 'operation depth after nested wrap') { model.operation_depth }
 
+puts '== load diagnostics (shown when MSPhysics fails to load) =='
+begin
+  diagnostics = MSPhysics.load_diagnostics
+  diagnostics.each { |line| puts "   #{line}" }
+  problem = diagnostics.find { |line| line.include?('ERROR') || line.match?(/not loaded|does not exist/) }
+  if problem.nil? && diagnostics.grep(/fiddle/i).size == 2
+    puts '  ok   load_diagnostics'
+  else
+    failures << "load_diagnostics: #{problem.inspect}"
+    puts "  FAIL load_diagnostics: #{problem.inspect}"
+  end
+rescue Exception => err
+  failures << "load_diagnostics: #{err.class}: #{err.message}"
+  puts "  FAIL load_diagnostics: #{err.class}: #{err.message}"
+end
+
+puts '== AMS Library usability check =='
+check(failures, 'MSPhysics.ams_library_usable? (bundled AMS 3.8.0a)') { MSPhysics.ams_library_usable? }
+
 puts '== reply for the extension panels =='
 check(failures, 'MSPhysics::Dialog') { MSPhysics::Dialog }
 check(failures, 'MSPhysics::ControlPanel') { MSPhysics::ControlPanel }

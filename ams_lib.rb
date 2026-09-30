@@ -14,21 +14,27 @@ unless file_loaded?(fpath)
       NAME = 'AMS Library'.freeze
 
       MAJOR_VERSION = 3.freeze
-      MINOR_VERSION = 7.freeze
-      PATCH_VERSION = 1.freeze
-      DEVEL_VERSION = 1.freeze
+      MINOR_VERSION = 8.freeze
+      PATCH_VERSION = 0.freeze
+      DEVEL_VERSION = 0.freeze
 
       VERSION_INT = (MAJOR_VERSION * 1000 + MINOR_VERSION * 100 + PATCH_VERSION * 10 + DEVEL_VERSION).to_i
       VERSION = sprintf("%d.%d.%d%c", MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION, DEVEL_VERSION + 0x61).freeze
 
       RELEASE_YEAR_START = 2013.freeze
-      RELEASE_YEAR_END = 2021.freeze
-      RELEASE_DATE = '29 May 2021'.freeze
+      RELEASE_YEAR_END = 2026.freeze
+      RELEASE_DATE = '29 September 2026'.freeze
 
       # Create the extension.
       cfpath = __FILE__.dup
       cfpath.force_encoding('UTF-8') if cfpath.respond_to?(:force_encoding)
       efpath = ::File.expand_path('../ams_Lib/main', cfpath)
+      # Some installations use a lower case folder name. This matters on case
+      # sensitive file systems.
+      unless ::File.exist?(efpath + '.rb')
+        alt_path = ::File.expand_path('../ams_lib/main', cfpath)
+        efpath = alt_path if ::File.exist?(alt_path + '.rb')
+      end
       @extension = ::SketchupExtension.new(NAME, efpath)
 
       # Attach some nice info.

@@ -30,7 +30,7 @@ module AMS
 
       fpath = ::File.join(dir.to_s, toolname + '_' + locale.to_s + '.json')
       fpath.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
-      return unless ::File.exists?(fpath)
+      return unless ::File.exist?(fpath)
       begin
         dat = nil
         ::File.open(fpath, 'r') { |fp|

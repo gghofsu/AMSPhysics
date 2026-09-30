@@ -2,7 +2,19 @@ cfpath = __FILE__.dup
 cfpath.force_encoding('UTF-8') if cfpath.respond_to?(:force_encoding)
 
 plugin_file = File.expand_path('../../ams_Lib', cfpath)
-Sketchup.require plugin_file
+# Some installations use a lower case folder name. This matters on case
+# sensitive file systems.
+plugin_file = File.expand_path('../../ams_lib', cfpath) unless File.exist?(plugin_file + '.rb')
+begin
+  Sketchup.require plugin_file
+rescue Exception => err
+  # The AMS Library installed next to this extension could not be loaded, e.g.
+  # because it is outdated and does not support the Ruby version used by the
+  # running SketchUp. Continue with the copy bundled with this extension, which
+  # is loaded right after this block.
+  msg = "[AMS Library] Could not load #{plugin_file}: #{err.class}: #{err.message}"
+  puts msg
+end
 
 # AMS is a top level namespace of AMS Library.
 # @since 1.0.0
@@ -31,6 +43,25 @@ module AMS
 
   # @since 3.7.0
   IS_RUBY_VERSION_27 = (RUBY_VERSION =~ /^2.7/ ? true : false)
+
+  # @since 3.8.0
+  IS_RUBY_VERSION_30 = (RUBY_VERSION =~ /^3.0/ ? true : false)
+
+  # @since 3.8.0
+  IS_RUBY_VERSION_31 = (RUBY_VERSION =~ /^3.1/ ? true : false)
+
+  # @since 3.8.0
+  IS_RUBY_VERSION_32 = (RUBY_VERSION =~ /^3.2/ ? true : false)
+
+  # @since 3.8.0
+  IS_RUBY_VERSION_33 = (RUBY_VERSION =~ /^3.3/ ? true : false)
+
+  # @since 3.8.0
+  IS_RUBY_VERSION_34 = (RUBY_VERSION =~ /^3.4/ ? true : false)
+
+  # Ruby ABI version used by the running SketchUp, e.g. "3.2".
+  # @since 3.8.0
+  RUBY_ABI_VERSION = RUBY_VERSION[0..2].to_s.freeze
 
   # @since 3.5.0
   IS_SKETCHUP_64BIT = ((::Sketchup.respond_to?('is_64bit?') && ::Sketchup.is_64bit?) ? true : false)
@@ -103,7 +134,8 @@ module AMS
           if ENV['LOCALAPPDATA']
             dir = ::File.join(::File.expand_path(ENV['LOCALAPPDATA']), 'Temp')
           else
-            dir = ::File.expand_path(ENV['TEMP'])
+            base = ENV['TEMP'] || ENV['TMP'] || ENV['TMPDIR']
+            dir = base ? ::File.expand_path(base) : ::File.expand_path('.')
           end
         end
         dir.force_encoding('UTF-8') unless IS_RUBY_VERSION_18
@@ -117,7 +149,16 @@ module AMS
     else
 
       def get_temp_dir
-        dir = ::File.expand_path(ENV['TMPDIR'])
+        dir = ENV['TMPDIR'] || ENV['TMP'] || ENV['TEMP']
+        if dir.nil? || dir.empty?
+          begin
+            dir = ::Dir.tmpdir
+          rescue Exception
+            dir = nil
+          end
+        end
+        dir = '.' if dir.nil? || dir.empty?
+        dir = ::File.expand_path(dir)
         dir.force_encoding('UTF-8') unless IS_RUBY_VERSION_18
         return dir
       end
@@ -151,13 +192,45 @@ unless file_loaded?(cfpath)
   Sketchup.require(File.join(dir, 'extension_manager'))
 
   ext_manager = AMS::ExtensionManager.new(dir, AMS::Lib::VERSION, false)
-  ext_manager.add_c_extension('ams_lib')
+  # The native part of the library is only available for the Ruby versions it
+  # was compiled for. When there is no build for the Ruby version used by the
+  # running SketchUp, the pure Ruby fallback implementation is loaded instead,
+  # so that extensions that depend on AMS Library keep working.
+  native_available = ext_manager.c_extension_available?('ams_lib')
+  ext_manager.add_c_extension('ams_lib') if native_available
   #require ::File.expand_path("../../ext-cpp/projects/vs/x64/ams_lib/Debug (#{RUBY_VERSION.to_f})/ams_lib.so", dir)
   #require ::File.expand_path("../../ext-cpp/projects/vs/x64/ams_lib/Release (#{RUBY_VERSION.to_f})/ams_lib.so", dir)
   ext_manager.add_ruby_no_require('main')
   ext_manager.add_ruby_no_require('extension_manager')
+  # ruby_fallback.rb is loaded by the code below, but it has to be registered
+  # with the extension manager as well: clean_up deletes every Ruby file of the
+  # library that is not registered, and it deleted the fallback implementation
+  # from the installations of older releases, which left them broken.
+  ext_manager.add_ruby_no_require('ruby_fallback')
   ext_manager.add_ruby('translate')
+  # Require the C extension, if available. The C extension is required by
+  # ExtensionManager#require_all. When it is missing, the Ruby fallback is
+  # loaded, which implements the very same API.
   ext_manager.require_all
+
+  # Whether the native part of AMS Library is loaded.
+  # @since 3.8.0
+  AMS.const_set(:NATIVE_EXTENSION_LOADED, native_available ? true : false) unless AMS.const_defined?(:NATIVE_EXTENSION_LOADED)
+
+  # Whether the pure Ruby fallback is loaded, because no native build of the
+  # library exists for the Ruby version used by the running SketchUp.
+  # @since 3.8.0
+  AMS.const_set(:RUBY_FALLBACK_LOADED, native_available ? false : true) unless AMS.const_defined?(:RUBY_FALLBACK_LOADED)
+
+  unless native_available
+    fallback_file = ::File.join(dir, 'ruby_fallback')
+    unless ::File.exist?(fallback_file + '.rb')
+      raise(LoadError, "The AMS Library folder is incomplete: \"#{fallback_file}.rb\" is " \
+        "missing! AMS Library has to be reinstalled, or the file has to be restored.")
+    end
+    Sketchup.require(fallback_file)
+  end
+
   ext_manager.clean_up(true)
 end
 

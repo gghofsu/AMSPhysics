@@ -1,0 +1,13 @@
+# Native build workspace (see build/)
+build/src/
+build/obj/
+build/out/
+build/compat/
+build/*.def
+
+# Downloaded C++ sources and intermediate build files (see tools/)
+tools/src/
+tools/obj/
+tools/out/
+tools/compat/
+tools/*.def

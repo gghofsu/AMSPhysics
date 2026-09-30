@@ -1,3 +1,98 @@
+## 1.1.6 - September 29, 2026
+- Fixed the reason why MSPhysics stopped loading from the second start of
+  SketchUp on: AMS Library deletes every Ruby file of its folder that is not
+  registered with its extension manager while cleaning up, which included the
+  pure Ruby fallback implementation (ruby_fallback.rb). The file is registered
+  now, so it is kept.
+- MSPhysics ships a copy of the fallback implementation and restores it when an
+  AMS Library installation is missing it, so that installations on which the
+  file was already deleted work again without being reinstalled. The folder of
+  AMS Library is complete again afterwards, which also matters for other
+  extensions that use it.
+- An incomplete AMS Library installation is reported with the name of the
+  missing file instead of a message about the version of the library.
+
+## 1.1.5 - September 29, 2026
+- Ship libogg-0.dll (a copy of libogg.dll) next to libogg.dll. libFLAC-8.dll is
+  linked against libogg-0.dll, so it could not be loaded, and Windows only
+  reported that its module could not be found.
+- Report a library that could not be loaded as optional when it is optional; an
+  optional library that cannot be loaded does not keep the extension from
+  working, and the report said nothing about it before.
+
+## 1.1.4 - September 29, 2026
+- Every mechanism that can load a library into SketchUp is tried until one of
+  them succeeds: Fiddle.dlopen (the loader Ruby itself uses for the extensions
+  of SketchUp), LoadLibraryExW with the folder of the library in the search path
+  of its dependencies, plain LoadLibraryExW, and Ruby's own require. Before,
+  the Windows API and Ruby's loader were alternatives, so a Windows API call
+  that failed silently left the libraries of the engine unloaded.
+- The reason why a library could not be loaded is reported for every library
+  and for every mechanism that was tried, including the error of the Windows
+  API itself when it cannot be called at all.
+- The report states which Ruby library the engine is built against and which
+  one the running SketchUp uses (RbConfig::CONFIG['RUBY_SO_NAME']). An engine
+  that is linked against a different Ruby library cannot be loaded, and Windows
+  only reports "The specified module could not be found" in that case.
+
+## 1.1.3 - September 29, 2026
+- The libraries of the engine are loaded with LoadLibraryExW and the flags that
+  make Windows look for the libraries of a library in its own folder and in the
+  folder of the application, in addition to the system folders. This does not
+  depend on the search order of the process, which applications can restrict
+  (SketchUp 2023 and later are Qt based and use Chromium for the HTML dialogs).
+- The library report names the Windows error for every library that could not
+  be loaded, and no longer reports a library as loaded when that could not be
+  verified.
+- When the engine cannot be loaded, the report now lists the libraries it
+  depends on, together with whether each of them is loaded in SketchUp, exists
+  as a file, or cannot be found. The dependencies are read from the import
+  table of the engine, which does not require the Windows API.
+- The engine no longer imports memchr from the private API set of the Universal
+  CRT (api-ms-win-crt-private-l1-1-0.dll).
+
+## 1.1.2 - September 29, 2026
+- Report the actual error when MSPhysics cannot be loaded: the error, its
+  cause, the backtrace and the environment are printed to the Ruby console,
+  saved next to the extension as load_error.txt, and shown to the user. This
+  matters because SketchUp may replace the error raised by an extension with a
+  less helpful one in its extension error report.
+- MSPhysics fails with a readable message when one of the libraries its engine
+  needs (newton.dll, SDL2.dll, SDL2_mixer.dll) cannot be loaded into SketchUp,
+  instead of failing later with "The specified module could not be found".
+- The native libraries are loaded through Ruby's own loader when the Windows
+  API cannot be called through Fiddle.
+- An outdated AMS Library (3.7.1b and before) is no longer used on Ruby 3, as
+  it relies on methods that were removed in Ruby 3 (File.exists? for example).
+  The copy of AMS Library bundled with MSPhysics is loaded instead, and the
+  problem is reported with instructions when that is not possible either.
+- The copy of AMS Library bundled with MSPhysics no longer fails when the
+  library installed next to it cannot be loaded.
+
+## 1.1.1 - September 29, 2026
+- Updated for SketchUp 2024-2026, which use Ruby 3.2.
+- Added a native engine (msp_lib + newton) for Ruby 3.2 on Windows x64, built
+  against the UCRT based x64-ucrt-ruby320.
+- Modifying scene properties (page camera, axes, rendering options, shadow
+  info) is an undoable operation in SketchUp 2026. Scene animations and scene
+  transitions now wrap these changes into a transparent operation.
+- Sketchup::ShadowInfo#[]= is stricter in SketchUp 2026.1 and raises a KeyError
+  for invalid or read-only keys; such keys are now skipped when restoring or
+  transitioning scenes. Fixed the SunDirection transition writing into the
+  rendering options instead of the shadow info.
+- Inverting a non-invertible transformation raises an ArgumentError in
+  SketchUp 2026.0; the extension now falls back to an identity transformation
+  instead of interrupting the simulation.
+- Large integer attribute values are detected without the Bignum constant,
+  which Ruby 3.2 removed.
+- The extension reports a missing AMS Library or a missing native engine for
+  the running Ruby version instead of failing with a LoadError on start-up.
+  Apple Silicon users are pointed at the Intel (x86_64) build, which runs under
+  Rosetta.
+- Updated the bundled AMS Library to 3.8.0, which provides a pure Ruby fallback
+  for the native part of the library (needed as there is no native build for
+  Ruby 3.2 yet).
+
 ## 1.0.3 - October 16, 2017
 - Improved joint connection tool. Now closest joints are determined by closest
   distance to object's bounding box rather than distance to object's center.

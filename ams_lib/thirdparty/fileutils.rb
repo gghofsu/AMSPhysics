@@ -1097,7 +1097,7 @@ module AMS
       def entries
         Dir.entries(path())\
             .reject {|n| n == '.' or n == '..' }\
-            .map {|n| Entry_.new(prefix(), join(rel(), n.untaint)) }
+            .map {|n| Entry_.new(prefix(), join(rel(), n)) }
       end
 
       def stat

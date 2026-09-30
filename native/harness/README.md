@@ -19,7 +19,9 @@ This makes it possible to check, without a SketchUp installation, that
 * the AMS::ExtensionManager staging logic copies the right files for the Ruby
   version of the running SketchUp (`tests/test_extension_manager.rb`),
 * the dependency diagnostics read the import table of the engine and report
-  which of the libraries it needs are available (`tests/test_dll_diagnostics.rb`).
+  which of the libraries it needs are available (`tests/test_dll_diagnostics.rb`),
+* every library that is shipped has all of the libraries it depends on
+  (`tests/test_dll_files.rb`).
 
 What it does **not** cover: the native libraries (`msp_lib.so`, `newton.dll`,
 `ams_lib.so`) are not loaded, so no simulation, no real window handling and no

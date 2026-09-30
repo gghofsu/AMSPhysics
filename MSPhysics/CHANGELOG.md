@@ -1,3 +1,11 @@
+## 1.1.5 - September 29, 2026
+- Ship libogg-0.dll (a copy of libogg.dll) next to libogg.dll. libFLAC-8.dll is
+  linked against libogg-0.dll, so it could not be loaded, and Windows only
+  reported that its module could not be found.
+- Report a library that could not be loaded as optional when it is optional; an
+  optional library that cannot be loaded does not keep the extension from
+  working, and the report said nothing about it before.
+
 ## 1.1.4 - September 29, 2026
 - Every mechanism that can load a library into SketchUp is tried until one of
   them succeeds: Fiddle.dlopen (the loader Ruby itself uses for the extensions

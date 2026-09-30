@@ -419,7 +419,7 @@ module AMS
             when :unverified
               dll_report << sprintf("%s : loaded, but the handle could not be verified (%s)\n", fname, detail)
             else
-              dll_report << sprintf("%s : FAILED\n", fname)
+              dll_report << sprintf("%s : FAILED%s\n", fname, data[1] ? '' : ' (optional)')
               attempts.each { |attempt| dll_report << "    #{attempt}\n" }
               failed << [fname, data[1], detail, attempts] if data[1]
             end

@@ -83,6 +83,12 @@ The two most common causes are:
   3, which SketchUp 2024 and later use. Older versions (3.7.1b and before) rely
   on methods that were removed in Ruby 3. Reinstalling MSPhysics installs the
   bundled AMS Library 3.8.0 alongside it.
+* **AMS Library is incomplete.** AMS Library 3.8.0a and before delete the Ruby
+  files of their folder that are not registered with their extension manager
+  while cleaning up, which removed `ruby_fallback.rb` and left the library
+  broken from the second start of SketchUp on. MSPhysics restores the file from
+  the copy it ships in `MSPhysics/ams_lib_fallback/` when it finds the
+  installation in that state, so no manual repair is needed.
 * **A library of the engine could not be loaded.** The message names the library
   and lists whether each of the `newton.dll`, `SDL2.dll` and `SDL2_mixer.dll`
   libraries could be loaded.

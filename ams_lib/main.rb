@@ -202,11 +202,16 @@ unless file_loaded?(cfpath)
   #require ::File.expand_path("../../ext-cpp/projects/vs/x64/ams_lib/Release (#{RUBY_VERSION.to_f})/ams_lib.so", dir)
   ext_manager.add_ruby_no_require('main')
   ext_manager.add_ruby_no_require('extension_manager')
+  # ruby_fallback.rb is loaded by the code below, but it has to be registered
+  # with the extension manager as well: clean_up deletes every Ruby file of the
+  # library that is not registered, and it deleted the fallback implementation
+  # from the installations of older releases, which left them broken.
+  ext_manager.add_ruby_no_require('ruby_fallback')
   ext_manager.add_ruby('translate')
   # Require the C extension, if available. The C extension is required by
   # ExtensionManager#require_all. When it is missing, the Ruby fallback is
   # loaded, which implements the very same API.
-  ext_manager.require_all if native_available
+  ext_manager.require_all
 
   # Whether the native part of AMS Library is loaded.
   # @since 3.8.0
@@ -218,7 +223,12 @@ unless file_loaded?(cfpath)
   AMS.const_set(:RUBY_FALLBACK_LOADED, native_available ? false : true) unless AMS.const_defined?(:RUBY_FALLBACK_LOADED)
 
   unless native_available
-    Sketchup.require(File.join(dir, 'ruby_fallback'))
+    fallback_file = ::File.join(dir, 'ruby_fallback')
+    unless ::File.exist?(fallback_file + '.rb')
+      raise(LoadError, "The AMS Library folder is incomplete: \"#{fallback_file}.rb\" is " \
+        "missing! AMS Library has to be reinstalled, or the file has to be restored.")
+    end
+    Sketchup.require(fallback_file)
   end
 
   ext_manager.clean_up(true)

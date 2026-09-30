@@ -6,7 +6,7 @@ require 'extensions.rb'
 module MSPhysics
 
   NAME         = 'MSPhysics'.freeze
-  VERSION      = '1.1.5'.freeze
+  VERSION      = '1.1.6'.freeze
   RELEASE_DATE = 'September 29, 2026'.freeze
 
   # Create the extension.

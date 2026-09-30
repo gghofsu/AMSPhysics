@@ -1,3 +1,17 @@
+## 1.1.6 - September 29, 2026
+- Fixed the reason why MSPhysics stopped loading from the second start of
+  SketchUp on: AMS Library deletes every Ruby file of its folder that is not
+  registered with its extension manager while cleaning up, which included the
+  pure Ruby fallback implementation (ruby_fallback.rb). The file is registered
+  now, so it is kept.
+- MSPhysics ships a copy of the fallback implementation and restores it when an
+  AMS Library installation is missing it, so that installations on which the
+  file was already deleted work again without being reinstalled. The folder of
+  AMS Library is complete again afterwards, which also matters for other
+  extensions that use it.
+- An incomplete AMS Library installation is reported with the name of the
+  missing file instead of a message about the version of the library.
+
 ## 1.1.5 - September 29, 2026
 - Ship libogg-0.dll (a copy of libogg.dll) next to libogg.dll. libFLAC-8.dll is
   linked against libogg-0.dll, so it could not be loaded, and Windows only

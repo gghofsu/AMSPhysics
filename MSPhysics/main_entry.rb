@@ -21,6 +21,43 @@ module MSPhysics
   end
 
   # @!visibility private
+  # Path of the copy of the pure Ruby fallback implementation of the native
+  # part of AMS Library that ships with MSPhysics.
+  # @return [String]
+  # @since 1.1.6
+  def self.shipped_ams_fallback_path
+    ::File.join(::File.dirname(__FILE__), 'ams_lib_fallback', 'ruby_fallback.rb')
+  end
+
+  # @!visibility private
+  # Restore the pure Ruby fallback implementation of the native part of AMS
+  # Library when the installed library is missing it.
+  #
+  # AMS Library 3.8.0a and before delete every Ruby file of their folder that
+  # is not registered with the extension manager while cleaning up (see
+  # AMS::ExtensionManager#clean_up), which included ruby_fallback.rb. Such an
+  # installation loads once and fails to load from the second start of
+  # SketchUp on. The file is copied back from the copy that ships with
+  # MSPhysics, so that AMS Library is complete again, also for other
+  # extensions. When the folder cannot be written to, the copy is loaded
+  # directly.
+  # @param [String] ams_dir Folder of the AMS Library.
+  # @return [String, nil] Path of the file to load, or +nil+ when the copy that
+  #   ships with MSPhysics is not available.
+  # @since 1.1.6
+  def self.restore_ams_fallback(ams_dir)
+    source = shipped_ams_fallback_path
+    return nil unless ::File.exist?(source)
+    target = ::File.join(ams_dir, 'ruby_fallback.rb')
+    begin
+      ::File.open(target, 'wb') { |file| file.write(::File.binread(source)) } unless ::File.exist?(target)
+    rescue Exception
+      # The folder cannot be written to; load the copy of MSPhysics instead.
+    end
+    ::File.exist?(target) ? target : source
+  end
+
+  # @!visibility private
   # Load the AMS Library. The copy installed next to this extension is
   # preferred; the copy bundled with MSPhysics is used when the installed one
   # cannot be loaded, e.g. because it is outdated and does not support the Ruby
@@ -45,6 +82,25 @@ module MSPhysics
       begin
         require candidate
       rescue Exception => err
+        # The installation is missing the pure Ruby fallback implementation of
+        # AMS Library, e.g. because an older AMS Library deleted it while
+        # cleaning up its folder. Restore it and finish the load.
+        if err.is_a?(LoadError) && err.message.to_s.include?('ruby_fallback')
+          restored = restore_ams_fallback(::File.dirname(candidate))
+          if restored
+            begin
+              require restored
+              if ams_library_usable?
+                problems << "#{candidate}.rb: restored the missing ruby_fallback.rb from the copy that ships with MSPhysics"
+                return [true, problems]
+              end
+            rescue Exception => restore_err
+              problems << "#{restored}: #{restore_err.class}: #{restore_err.message}"
+            end
+          else
+            problems << "The copy of ruby_fallback.rb that ships with MSPhysics is missing as well (#{shipped_ams_fallback_path})"
+          end
+        end
         problems << "#{candidate}.rb: #{err.class}: #{err.message}"
         next
       end
@@ -81,6 +137,10 @@ module MSPhysics
     if defined?(::AMS)
       lines << "  AMS Library: #{safe.call { ::AMS::Lib::VERSION }}"
       lines << "  AMS Library loaded from: #{safe.call { $LOADED_FEATURES.grep(%r{ams_?[Ll]ib/main\.rb\z}).first || 'unknown' }}"
+      lines << "  AMS Library is complete: #{safe.call {
+        ams_dir = ::File.dirname($LOADED_FEATURES.grep(%r{ams_?[Ll]ib/main\.rb\z}).first.to_s)
+        %w[main.rb extension_manager.rb ruby_fallback.rb translate.rb].reject { |name| ::File.exist?(::File.join(ams_dir, name)) }.inspect
+      }}"
       lines << "  AMS native extension loaded: #{safe.call { ::AMS::NATIVE_EXTENSION_LOADED }}" if ::AMS.const_defined?(:NATIVE_EXTENSION_LOADED, false)
       lines << "  AMS Ruby fallback loaded: #{safe.call { ::AMS::RUBY_FALLBACK_LOADED }}" if ::AMS.const_defined?(:RUBY_FALLBACK_LOADED, false)
       if defined?(::AMS::FallbackHelper)

@@ -21,7 +21,10 @@ This makes it possible to check, without a SketchUp installation, that
 * the dependency diagnostics read the import table of the engine and report
   which of the libraries it needs are available (`tests/test_dll_diagnostics.rb`),
 * every library that is shipped has all of the libraries it depends on
-  (`tests/test_dll_files.rb`).
+  (`tests/test_dll_files.rb`),
+* loading AMS Library does not delete its own files, and an installation that
+  is missing the fallback implementation is repaired
+  (`tests/test_ams_clean_up.rb`).
 
 What it does **not** cover: the native libraries (`msp_lib.so`, `newton.dll`,
 `ams_lib.so`) are not loaded, so no simulation, no real window handling and no

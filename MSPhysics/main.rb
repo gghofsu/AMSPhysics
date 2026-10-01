@@ -9,10 +9,11 @@ ext_dir.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
 
 ext_manager = AMS::ExtensionManager.new(ext_dir, MSPhysics::VERSION)
 if AMS::IS_PLATFORM_WINDOWS
+  ext_manager.add_optional_library('libogg')
+  ext_manager.add_optional_library('libogg-0')
   ext_manager.add_optional_library('libFLAC-8')
   ext_manager.add_optional_library('libmikmod-2')
   ext_manager.add_optional_library('libmodplug-1')
-  ext_manager.add_optional_library('libogg')
   ext_manager.add_optional_library('libvorbis')
   ext_manager.add_optional_library('libvorbisfile-3')
   ext_manager.add_required_library('SDL2')

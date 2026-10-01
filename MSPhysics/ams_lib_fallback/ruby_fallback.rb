@@ -106,7 +106,8 @@ module AMS
       # @since 3.8.0
       def wide_string(str)
         return nil unless FIDDLE_AVAILABLE
-        Fiddle::Pointer[str.to_s.encode('UTF-16LE') + "\x00".dup.force_encoding('BINARY')]
+        return nil if str.nil?
+        Fiddle::Pointer[(str.to_s + "\0").encode('UTF-16LE').b]
       rescue StandardError
         nil
       end
@@ -303,7 +304,7 @@ unless AMS.const_defined?(:DLL, false)
         # @since 3.8.0
         def load_library_info(path)
           path = path.to_s
-          return [@status[path], @errors[path]] if @status.key?(path)
+          return [@status[path], @status[path] == :loaded ? @notes[path] : @errors[path]] if @status.key?(path)
           unless ::File.exist?(path)
             @status[path] = :failed
             @errors[path] = 'The file does not exist.'
@@ -318,10 +319,12 @@ unless AMS.const_defined?(:DLL, false)
           #    it fails, which makes it the most useful one to try first.
           if AMS::FallbackHelper::FIDDLE_AVAILABLE
             begin
-              Fiddle.dlopen(path)
+              dl_handle = Fiddle.dlopen(path)
+              @loaded[path] = dl_handle
               # Fiddle.dlopen raises upon failure, so the library is in the
               # process at this point.
               handle = module_handle(::File.basename(path))
+              handle = dl_handle.to_i if handle <= 0 && dl_handle.respond_to?(:to_i)
               status = handle > 0 ? :loaded : :unverified
               detail = handle > 0 ? handle : 'Fiddle.dlopen loaded the library.'
               attempts << "Fiddle.dlopen: loaded#{handle > 0 ? '' : ' (the handle could not be verified)'}"
@@ -502,9 +505,12 @@ unless AMS.const_defined?(:DLL, false)
         # @since 3.8.0
         def module_handle(name)
           return 0 unless AMS::FallbackHelper::WIN32_AVAILABLE
+          return 0 if name.nil? || name.to_s.empty?
+          wname = AMS::FallbackHelper.wide_string(name.to_s)
+          return 0 unless wname
           AMS::FallbackHelper.call_win32('kernel32', 'GetModuleHandleW',
             [Fiddle::TYPE_VOIDP], Fiddle::TYPE_VOIDP,
-            AMS::FallbackHelper.wide_string(name.to_s)).to_i
+            wname).to_i
         rescue StandardError, Fiddle::DLError
           0
         end
@@ -1063,9 +1069,10 @@ unless AMS.const_defined?(:Window, false)
         # @since 3.8.0
         def set_long(handle, index, value)
           return false unless handle.is_a?(Integer) && handle != 0
+          signed_val = [value.to_i & 0xFFFFFFFF].pack('L').unpack('l')[0]
           result = AMS::FallbackHelper.call_win32('user32', 'SetWindowLongW',
             [Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT, Fiddle::TYPE_INT],
-            Fiddle::TYPE_INT, handle, index.to_i, value.to_i)
+            Fiddle::TYPE_INT, handle, index.to_i, signed_val)
           !result.nil?
         rescue StandardError
           false
@@ -1310,7 +1317,7 @@ unless AMS.const_defined?(:Sketchup, false)
           return true if foreground.nil?
           foreground = foreground.to_i
           return true if foreground == 0
-          pid = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
+          pid = Fiddle::Pointer["\x00".dup.force_encoding('BINARY') * Fiddle::SIZEOF_INT]
           AMS::FallbackHelper.call_win32('user32', 'GetWindowThreadProcessId',
             [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_LONG, foreground, pid)
           foreground_pid = pid[0, Fiddle::SIZEOF_INT].unpack('L<')[0]

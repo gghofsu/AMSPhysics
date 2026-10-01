@@ -136,8 +136,8 @@ class MSPhysics::BodyContext < MSPhysics::CommonContext
     rescue Exception => err
       ref = nil
       test = MSPhysics::SCRIPT_NAME + ':'
-      err_message = err.message
-      err_backtrace = err.backtrace
+      err_message = err.message.dup
+      err_backtrace = err.backtrace ? err.backtrace.map(&:dup) : []
       unless AMS::IS_RUBY_VERSION_18
         err_message.force_encoding('UTF-8')
         err_backtrace.each { |i| i.force_encoding('UTF-8') }

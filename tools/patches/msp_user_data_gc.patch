@@ -1,0 +1,162 @@
+--- a/C++Extension/Source/main/msp_body.cpp
++++ b/C++Extension/Source/main/msp_body.cpp
+@@ -61,6 +61,13 @@
+     c_clear_non_collidable_bodies(body);
+     if (s_valid_bodies.find(body) != s_valid_bodies.end())
+         s_valid_bodies.erase(body);
++    for (std::set<const NewtonBody*>::iterator it = s_valid_bodies.begin(); it != s_valid_bodies.end(); ++it) {
++        const NewtonBody* other_body = *it;
++        BodyData* other_data = reinterpret_cast<BodyData*>(NewtonBodyGetUserData(other_body));
++        if (other_data != nullptr && !other_data->m_touchers.empty()) {
++            other_data->m_touchers.erase(body);
++        }
++    }
+     if (body_data->m_group != Qnil && world_data->m_group_to_body_map.find(body_data->m_group) != world_data->m_group_to_body_map.end())
+         world_data->m_group_to_body_map.erase(body_data->m_group);
+     if (body_data->m_destructor_proc != Qnil)
+--- a/C++Extension/Source/main/msp_joint.cpp	2026-09-16 05:44:04.000000000 +0000
++++ b/C++Extension/Source/main/msp_joint.cpp	2026-10-01 13:58:49.454892553 +0000
+@@ -268,7 +268,12 @@
+         pin_matrix = pin_matrix * parent_matrix.Inverse();
+     }
+     JointData* joint_data = new JointData(world, 6, parent, pin_matrix, v_group);
+-    if (v_group != Qnil) s_map_group_to_joints[v_group][joint_data] = true;
++    if (v_group != Qnil) {
++        s_map_group_to_joints[v_group][joint_data] = true;
++        MSP::World::WorldData* world_data = reinterpret_cast<MSP::World::WorldData*>(NewtonWorldGetUserData(world));
++        if (world_data != nullptr && rb_ary_includes(world_data->m_joint_user_datas, v_group) == Qfalse)
++            rb_ary_push(world_data->m_joint_user_datas, v_group);
++    }
+     s_valid_joints[joint_data] = true;
+     return joint_data;
+ }
+@@ -276,14 +281,23 @@
+ void MSP::Joint::c_destroy(JointData* joint_data) {
+     if (s_valid_joints.find(joint_data) != s_valid_joints.end())
+         s_valid_joints.erase(joint_data);
+-    VALUE v_group = rb_ary_entry(joint_data->m_user_data, 1);
++    MSP::World::WorldData* world_data = reinterpret_cast<MSP::World::WorldData*>(NewtonWorldGetUserData(joint_data->m_world));
++    if (joint_data->m_user_data != Qnil) {
++        if (world_data != nullptr)
++            rb_ary_delete(world_data->m_joint_user_datas, joint_data->m_user_data);
++        joint_data->m_user_data = Qnil;
++    }
++    VALUE v_group = joint_data->m_group;
+     if (v_group != Qnil) {
+         std::map<VALUE, std::map<JointData*, bool>>::iterator it(s_map_group_to_joints.find(v_group));
+         if (it != s_map_group_to_joints.end()) {
+             if (it->second.find(joint_data) != it->second.end())
+                 it->second.erase(joint_data);
+-            if (it->second.empty())
++            if (it->second.empty()) {
+                 s_map_group_to_joints.erase(it);
++                if (world_data != nullptr)
++                    rb_ary_delete(world_data->m_joint_user_datas, v_group);
++            }
+         }
+     }
+     if (joint_data->m_connected)
+@@ -489,6 +503,11 @@
+ 
+ VALUE MSP::Joint::rbf_set_user_data(VALUE self, VALUE v_joint, VALUE v_user_data) {
+     JointData* joint_data = c_value_to_joint(v_joint);
++    MSP::World::WorldData* world_data = reinterpret_cast<MSP::World::WorldData*>(NewtonWorldGetUserData(joint_data->m_world));
++    if (joint_data->m_user_data != Qnil)
++        rb_ary_delete(world_data->m_joint_user_datas, joint_data->m_user_data);
++    if (v_user_data != Qnil)
++        rb_ary_push(world_data->m_joint_user_datas, v_user_data);
+     joint_data->m_user_data = v_user_data;
+     return Qnil;
+ }
+@@ -567,7 +586,7 @@
+         return Qnil;
+     else {
+         for (std::map<JointData*, bool>::iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
+-            VALUE v_user_data = rb_ary_entry(it2->first->m_user_data, 0);
++            VALUE v_user_data = it2->first->m_user_data;
+             if (v_user_data != Qnil) return v_user_data;
+         }
+     }
+--- a/C++Extension/Source/main/msp_gear.cpp	2026-09-16 05:44:04.000000000 +0000
++++ b/C++Extension/Source/main/msp_gear.cpp	2026-10-01 13:59:29.303161374 +0000
+@@ -64,6 +64,12 @@
+ void MSP::Gear::c_destroy(GearData* gear_data) {
+     if (s_valid_gears.find(gear_data) != s_valid_gears.end())
+         s_valid_gears.erase(gear_data);
++    MSP::World::WorldData* world_data = reinterpret_cast<MSP::World::WorldData*>(NewtonWorldGetUserData(gear_data->m_world));
++    if (gear_data->m_user_data != Qnil) {
++        if (world_data != nullptr)
++            rb_ary_delete(world_data->m_gear_user_datas, gear_data->m_user_data);
++        gear_data->m_user_data = Qnil;
++    }
+     delete gear_data;
+ }
+ 
+@@ -140,6 +146,11 @@
+ 
+ VALUE MSP::Gear::rbf_set_user_data(VALUE self, VALUE v_gear, VALUE v_user_data) {
+     GearData* gear_data = c_value_to_gear(v_gear);
++    MSP::World::WorldData* world_data = reinterpret_cast<MSP::World::WorldData*>(NewtonWorldGetUserData(gear_data->m_world));
++    if (gear_data->m_user_data != Qnil)
++        rb_ary_delete(world_data->m_gear_user_datas, gear_data->m_user_data);
++    if (v_user_data != Qnil)
++        rb_ary_push(world_data->m_gear_user_datas, v_user_data);
+     gear_data->m_user_data = v_user_data;
+     return Qnil;
+ }
+--- a/C++Extension/Source/main/msp_newton.cpp	2026-09-16 05:44:04.000000000 +0000
++++ b/C++Extension/Source/main/msp_newton.cpp	2026-10-01 14:00:00.607372585 +0000
+@@ -58,7 +58,7 @@
+         VALUE v_address = MSP::Body::c_body_to_value(body);
+         if (proc_given) {
+             MSP::Body::BodyData* body_data = reinterpret_cast<MSP::Body::BodyData*>(NewtonBodyGetUserData(body));
+-            VALUE v_user_data = rb_ary_entry(body_data->m_user_data, 0);
++            VALUE v_user_data = body_data->m_user_data;
+             VALUE v_result = rb_yield_values(2, v_address, v_user_data);
+             if (v_result != Qnil)
+                 rb_ary_push(v_bodies, v_result);
+@@ -75,7 +75,7 @@
+     for (std::map<MSP::Joint::JointData*, bool>::iterator it = MSP::Joint::s_valid_joints.begin(); it != MSP::Joint::s_valid_joints.end(); ++it) {
+         VALUE v_address = MSP::Joint::c_joint_to_value(it->first);
+         if (proc_given) {
+-            VALUE v_user_data = rb_ary_entry(it->first->m_user_data, 0);
++            VALUE v_user_data = it->first->m_user_data;
+             VALUE v_result = rb_yield_values(2, v_address, v_user_data);
+             if (v_result != Qnil)
+                 rb_ary_push(v_joints, v_result);
+@@ -93,7 +93,7 @@
+         MSP::Gear::GearData* object = *it;
+         VALUE v_address = MSP::Gear::c_gear_to_value(object);
+         if (proc_given) {
+-            VALUE v_user_data = rb_ary_entry(object->m_user_data, 0);
++            VALUE v_user_data = object->m_user_data;
+             VALUE v_result = rb_yield_values(2, v_address, v_user_data);
+             if (v_result != Qnil) rb_ary_push(v_gears, v_result);
+         }
+--- a/C++Extension/Source/main/msp_world.cpp	2026-09-16 05:44:04.000000000 +0000
++++ b/C++Extension/Source/main/msp_world.cpp	2026-10-01 14:00:28.639561699 +0000
+@@ -201,8 +201,11 @@
+ }
+ 
+ void MSP::World::collision_copy_constructor_callback(const NewtonWorld* const world, NewtonCollision* const collision, const NewtonCollision* const source_collision) {
+-    MSP::Collision::CollisionData* data = MSP::Collision::s_valid_collisions[source_collision];
+-    MSP::Collision::s_valid_collisions[collision] = new MSP::Collision::CollisionData(data->m_scale);
++    std::map<const NewtonCollision*, MSP::Collision::CollisionData*>::iterator it = MSP::Collision::s_valid_collisions.find(source_collision);
++    if (it != MSP::Collision::s_valid_collisions.end() && it->second != nullptr)
++        MSP::Collision::s_valid_collisions[collision] = new MSP::Collision::CollisionData(it->second->m_scale);
++    else
++        MSP::Collision::s_valid_collisions[collision] = new MSP::Collision::CollisionData();
+ }
+ 
+ void MSP::World::collision_destructor_callback(const NewtonWorld* const world, const NewtonCollision* const collision) {
+@@ -385,6 +388,10 @@
+         NewtonBodyGetMatrix(body, &matrixA[0][0]);
+         std::vector<const NewtonBody*> to_erase;
+         for (std::map<const NewtonBody*, char>::iterator it = body_data->m_touchers.begin(); it != body_data->m_touchers.end(); ++it) {
++            if (!MSP::Body::c_is_body_valid(it->first)) {
++                to_erase.push_back(it->first);
++                continue;
++            }
+             if (it->second == 0) {
+                 body_data->m_touchers[it->first] = 1;
+                 continue;

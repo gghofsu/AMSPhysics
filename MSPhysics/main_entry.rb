@@ -50,7 +50,10 @@ module MSPhysics
     return nil unless ::File.exist?(source)
     target = ::File.join(ams_dir, 'ruby_fallback.rb')
     begin
-      ::File.open(target, 'wb') { |file| file.write(::File.binread(source)) } unless ::File.exist?(target)
+      content = ::File.binread(source)
+      if !::File.exist?(target) || ::File.binread(target) != content
+        ::File.open(target, 'wb') { |file| file.write(content) }
+      end
     rescue Exception
       # The folder cannot be written to; load the copy of MSPhysics instead.
     end
@@ -80,6 +83,8 @@ module MSPhysics
     end
     candidates.each { |candidate|
       begin
+        candidate_dir = ::File.dirname(candidate)
+        restore_ams_fallback(candidate_dir) if ::File.exist?(::File.join(candidate_dir, 'ruby_fallback.rb'))
         require candidate
       rescue Exception => err
         # The installation is missing the pure Ruby fallback implementation of

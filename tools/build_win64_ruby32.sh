@@ -21,7 +21,17 @@
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-ZIG=${ZIG:-zig}
+if [ -z "${ZIG:-}" ]; then
+  if command -v zig >/dev/null 2>&1; then
+    ZIG=$(command -v zig)
+  elif [ -x /tmp/zig-pip/ziglang/zig ]; then
+    ZIG=/tmp/zig-pip/ziglang/zig
+  elif [ -x /tmp/zig-linux-x86_64-0.13.0/zig ]; then
+    ZIG=/tmp/zig-linux-x86_64-0.13.0/zig
+  else
+    ZIG=zig
+  fi
+fi
 SRC=${SRC:-$HERE/src/MSPhysics-master/C++Extension}
 B=${B:-$HERE}
 OUT="$B/out"
@@ -138,15 +148,28 @@ cp -f "$OBJ/engine/memchr_shim.o" "$OBJ/msp/memchr_shim.o"
 
 echo "=== archiving engine ==="
 rm -f "$OUT/libnewton_engine.a"
-$ZIG ar rcs "$OUT/libnewton_engine.a" "$OBJ"/engine/*.o
+ENGINE_ARCHIVE_OBJS=()
+for obj in "$OBJ"/engine/*.o; do
+  base=$(basename "$obj")
+  if [ "$base" != "dgMatrix.o" ] && [ "$base" != "dgGoogol.o" ]; then
+    ENGINE_ARCHIVE_OBJS+=("$obj")
+  fi
+done
+$ZIG ar rcs "$OUT/libnewton_engine.a" "${ENGINE_ARCHIVE_OBJS[@]}"
 
 echo "=== linking newton.dll ==="
-$ZIG c++ -target x86_64-windows-gnu -shared -O2 -msse2 -msse3 -msse4.1 -w \
+# In MinGW-w64, __do_global_ctors iterates __CTOR_LIST__ from the last linked
+# object to the first. Pass all object files explicitly with dgGoogol.o and
+# dgMatrix.o last so that dgVector::m_one / m_zero and dgMatrix::m_identityMatrix
+# are initialized before dgWorldDynamicsParallelSolver.cpp and other translation
+# units that copy them in their own static constructors.
+$ZIG c++ -target x86_64-windows-gnu -shared -Wl,-s -O2 -msse2 -msse3 -msse4.1 -w \
   -DNDEBUG -DWIN32 -D_USRDLL -D_NEWTON_BUILD_DLL -D_WIN_64_VER -D_CRT_SECURE_NO_WARNINGS \
   -I"$ND/dMath" -I"$ND/dgCore" -I"$ND/dgPhysics" -I"$ND/dgMeshUtil" \
   "$ND/dgNewton/Newton.cpp" "$ND/dgNewton/NewtonClass.cpp" \
   -Wl,--out-implib,"$OUT/newton.lib.a" \
-  "$OUT/libnewton_engine.a" -o "$OUT/newton.dll"
+  "${ENGINE_ARCHIVE_OBJS[@]}" "$OBJ/engine/dgGoogol.o" "$OBJ/engine/dgMatrix.o" \
+  -o "$OUT/newton.dll"
 
 echo "=== linking msp_lib.so ==="
 # The dMath objects have to be linked into msp_lib explicitly; their symbols are
@@ -165,7 +188,7 @@ EXPORTS
 	Init_msp_lib
 EOF
 
-$ZIG c++ -target x86_64-windows-gnu -shared -O2 -msse2 -msse3 -msse4.1 $MSP_FLAGS \
+$ZIG c++ -target x86_64-windows-gnu -shared -Wl,-s -O2 -msse2 -msse3 -msse4.1 $MSP_FLAGS \
   -Wl,--out-implib,"$OUT/msp_lib.lib.a" \
   "$B/RubyExtension.def" \
   "$OBJ"/msp/*.o $DMATH_OBJS \
@@ -174,9 +197,6 @@ $ZIG c++ -target x86_64-windows-gnu -shared -O2 -msse2 -msse3 -msse4.1 $MSP_FLAG
   "$SRC/ThirdParty/SDL2_mixer/lib/x64/SDL2_mixer.lib" \
   "$R/lib/win32/x64-ucrt-ruby320.lib" \
   -o "$OUT/msp_lib.so"
-
-echo "=== stripping ==="
-$ZIG strip -s "$OUT/msp_lib.so" "$OUT/newton.dll" 2>/dev/null || true
 
 if [ "$INSTALL" = "1" ]; then
   STAGE="$HERE/../MSPhysics/libraries/stage/win64/3.2"

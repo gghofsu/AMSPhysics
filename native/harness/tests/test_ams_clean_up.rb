@@ -104,6 +104,11 @@ check(failures, 'load_ams_library repairs the installation') {
   loaded, problems = MSPhysics.load_ams_library('/.scratch/ams_repair/MSPhysics')
   loaded || raise(problems.inspect)
 }
+check(failures, 'MSPhysics.restore_ams_fallback updates an outdated file') {
+  File.open(File.join(broken, 'ruby_fallback.rb'), 'wb') { |file| file.write("# outdated\n") }
+  MSPhysics.restore_ams_fallback(broken)
+  File.binread(File.join(broken, 'ruby_fallback.rb')) == File.binread(MSPhysics.shipped_ams_fallback_path)
+}
 
 puts
 if failures.empty?

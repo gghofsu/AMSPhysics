@@ -41,5 +41,6 @@ apply_patch() { # $1 = patch file, $2 = description
 
 apply_patch "$HERE/patches/ruby_prep.h.patch" "C++Extension/Source/main/ruby_prep.h"
 apply_patch "$HERE/patches/dgTypes.cpp.patch" "C++Extension/ThirdParty/NewtonDynamics/dgCore/dgTypes.cpp"
+apply_patch "$HERE/patches/msp_crash_fixes.patch" "C++Extension/Source/main (user data, GC protection and dangling pointers)"
 
 echo "==> sources ready at $DEST/MSPhysics-master"

@@ -21,7 +21,21 @@
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-ZIG=${ZIG:-zig}
+
+# Locate zig. It is either on the PATH, installed with the ziglang Python
+# package (pip install ziglang), or unpacked into a temporary folder.
+if [ -z "${ZIG:-}" ]; then
+  if command -v zig >/dev/null 2>&1; then
+    ZIG=$(command -v zig)
+  else
+    ZIG=$(python3 -c 'import os, sys, ziglang; sys.stdout.write(os.path.join(os.path.dirname(ziglang.__file__), "zig"))' 2>/dev/null || true)
+    [ -n "$ZIG" ] && [ -x "$ZIG" ] || ZIG=""
+    for candidate in /tmp/zig-pip/ziglang/zig /tmp/zig-linux-x86_64-*/zig; do
+      [ -z "$ZIG" ] && [ -x "$candidate" ] && ZIG=$candidate
+    done
+    [ -n "$ZIG" ] || ZIG=zig
+  fi
+fi
 SRC=${SRC:-$HERE/src/MSPhysics-master/C++Extension}
 B=${B:-$HERE}
 OUT="$B/out"
@@ -137,16 +151,33 @@ $ZIG cc -target x86_64-windows-gnu -O2 -fno-builtin -c "$B/compat/memchr_shim.c"
 cp -f "$OBJ/engine/memchr_shim.o" "$OBJ/msp/memchr_shim.o"
 
 echo "=== archiving engine ==="
+# dgCore/dgMatrix.cpp and dgCore/dgGoogol.cpp define the static class members
+# that other translation units copy in their own static constructors (e.g.
+# dgWorkGroupFloat::m_one copies dgVector::m_one) and are therefore linked into
+# newton.dll after all other object files; see the note at the link below.
 rm -f "$OUT/libnewton_engine.a"
-$ZIG ar rcs "$OUT/libnewton_engine.a" "$OBJ"/engine/*.o
+ENGINE_ARCHIVE_OBJS=()
+for obj in "$OBJ"/engine/*.o; do
+  base=$(basename "$obj")
+  if [ "$base" != "dgMatrix.o" ] && [ "$base" != "dgGoogol.o" ]; then
+    ENGINE_ARCHIVE_OBJS+=("$obj")
+  fi
+done
+$ZIG ar rcs "$OUT/libnewton_engine.a" "${ENGINE_ARCHIVE_OBJS[@]}"
 
 echo "=== linking newton.dll ==="
-$ZIG c++ -target x86_64-windows-gnu -shared -O2 -msse2 -msse3 -msse4.1 -w \
+# MinGW walks __CTOR_LIST__ from the last linked object file to the first (see
+# __do_global_ctors in the mingw-w64 CRT), so dgMatrix.o and dgGoogol.o are
+# passed explicitly after the other object files: the static dgVector and
+# dgGoogol members have to be initialized before the translation units that
+# copy them, or the solver runs with zeroed constants.
+$ZIG c++ -target x86_64-windows-gnu -shared -Wl,-s -O2 -msse2 -msse3 -msse4.1 -w \
   -DNDEBUG -DWIN32 -D_USRDLL -D_NEWTON_BUILD_DLL -D_WIN_64_VER -D_CRT_SECURE_NO_WARNINGS \
   -I"$ND/dMath" -I"$ND/dgCore" -I"$ND/dgPhysics" -I"$ND/dgMeshUtil" \
   "$ND/dgNewton/Newton.cpp" "$ND/dgNewton/NewtonClass.cpp" \
   -Wl,--out-implib,"$OUT/newton.lib.a" \
-  "$OUT/libnewton_engine.a" -o "$OUT/newton.dll"
+  "${ENGINE_ARCHIVE_OBJS[@]}" "$OBJ/engine/dgGoogol.o" "$OBJ/engine/dgMatrix.o" \
+  -o "$OUT/newton.dll"
 
 echo "=== linking msp_lib.so ==="
 # The dMath objects have to be linked into msp_lib explicitly; their symbols are
@@ -165,7 +196,7 @@ EXPORTS
 	Init_msp_lib
 EOF
 
-$ZIG c++ -target x86_64-windows-gnu -shared -O2 -msse2 -msse3 -msse4.1 $MSP_FLAGS \
+$ZIG c++ -target x86_64-windows-gnu -shared -Wl,-s -O2 -msse2 -msse3 -msse4.1 $MSP_FLAGS \
   -Wl,--out-implib,"$OUT/msp_lib.lib.a" \
   "$B/RubyExtension.def" \
   "$OBJ"/msp/*.o $DMATH_OBJS \
@@ -174,9 +205,6 @@ $ZIG c++ -target x86_64-windows-gnu -shared -O2 -msse2 -msse3 -msse4.1 $MSP_FLAG
   "$SRC/ThirdParty/SDL2_mixer/lib/x64/SDL2_mixer.lib" \
   "$R/lib/win32/x64-ucrt-ruby320.lib" \
   -o "$OUT/msp_lib.so"
-
-echo "=== stripping ==="
-$ZIG strip -s "$OUT/msp_lib.so" "$OUT/newton.dll" 2>/dev/null || true
 
 if [ "$INSTALL" = "1" ]; then
   STAGE="$HERE/../MSPhysics/libraries/stage/win64/3.2"

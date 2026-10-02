@@ -1210,7 +1210,7 @@ module MSPhysics::Dialog
               add_sound(path)
               update_sound_state
             rescue TypeError => err
-              err_message = err.message
+              err_message = err.message.dup
               err_message.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
               ::UI.messagebox(err_message)
             end

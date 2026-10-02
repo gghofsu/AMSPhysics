@@ -32,11 +32,21 @@ class MSPhysics::Simulation < MSPhysics::Entity
     end
 
     # End simulation.
+    # @note The method is guarded against re-entrance. The destructor procedure
+    #   of the world cancels the simulation when the world is destroyed, and
+    #   deactivating the tool from within the destruction of the world
+    #   re-enters the tool handling of SketchUp, which crashes it.
     # @return [Boolean] success
     def reset
-      return false unless @@instance
-      Sketchup.active_model.select_tool(nil)
-      @@instance = nil
+      return false if @@instance.nil? || @resetting
+      @resetting = true
+      begin
+        model = Sketchup.active_model
+        model.select_tool(nil) if model
+      ensure
+        @@instance = nil
+        @resetting = false
+      end
       true
     end
 
@@ -822,8 +832,8 @@ class MSPhysics::Simulation < MSPhysics::Entity
       rescue Exception => err
         ref = nil
         test = MSPhysics::SCRIPT_NAME + ':'
-        err_message = err.message
-        err_backtrace = err.backtrace
+        err_message = err.message.dup
+        err_backtrace = err.backtrace ? err.backtrace.map(&:dup) : []
         unless AMS::IS_RUBY_VERSION_18
           err_message.force_encoding('UTF-8')
           err_backtrace.each { |i| i.force_encoding('UTF-8') }
@@ -1878,8 +1888,8 @@ class MSPhysics::Simulation < MSPhysics::Entity
       false
     }
   rescue Exception => err
-    err_message = err.message
-    err_backtrace = err.backtrace
+    err_message = err.message.dup
+    err_backtrace = err.backtrace ? err.backtrace.map(&:dup) : []
     unless AMS::IS_RUBY_VERSION_18
       err_message.force_encoding('UTF-8')
       err_backtrace.each { |i| i.force_encoding('UTF-8') }
@@ -2314,7 +2324,7 @@ class MSPhysics::Simulation < MSPhysics::Entity
         begin
           value = @controller_context.eval_script(data[:controller], CONTROLLER_NAME, 0)
         rescue Exception => err
-          err_message = err.message
+          err_message = err.message.dup
           err_message.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
           puts "An exception occurred while evaluating thruster controller!\nController:\n#{data[:controller]}\n#{err.class}:\n#{err_message}"
         end
@@ -2334,7 +2344,7 @@ class MSPhysics::Simulation < MSPhysics::Entity
             body.add_force(value)
           end
         rescue Exception => err
-          err_message = err.message
+          err_message = err.message.dup
           err_message.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
           puts "An exception occurred while assigning thruster controller!\nController:\n#{data[:controller]}\n#{err.class}:\n#{err_message}"
         end
@@ -2347,7 +2357,7 @@ class MSPhysics::Simulation < MSPhysics::Entity
         begin
           value = @controller_context.eval_script(data[:controller], CONTROLLER_NAME, 0)
         rescue Exception => err
-          err_message = err.message
+          err_message = err.message.dup
           err_message.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
           puts "An exception occurred while evaluating emitter controller!\nController:\n#{data[:controller]}\n#{err.class}:\n#{err_message}"
         end
@@ -2375,7 +2385,7 @@ class MSPhysics::Simulation < MSPhysics::Entity
             end
           end
         rescue Exception => err
-          err_message = err.message
+          err_message = err.message.dup
           err_message.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
           puts "An exception occurred while assigning emitter controller!\nController:\n#{data[:controller]}\n#{err.class}:\n#{err_message}"
         end
@@ -2410,7 +2420,7 @@ class MSPhysics::Simulation < MSPhysics::Entity
         begin
           value = @controller_context.eval_script(controller, CONTROLLER_NAME, 0)
         rescue Exception => err
-          err_message = err.message
+          err_message = err.message.dup
           err_message.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
           puts "An exception occurred while evaluating joint controller!\nController:\n#{controller}\n#{err.class}:\n#{err_message}"
         end
@@ -2431,7 +2441,7 @@ class MSPhysics::Simulation < MSPhysics::Entity
             joint.controller = value * ratio
           end
         rescue Exception => err
-          err_message = err.message
+          err_message = err.message.dup
           err_message.force_encoding('UTF-8') unless AMS::IS_RUBY_VERSION_18
           puts "An exception occurred while assigning joint controller!\nController:\n#{controller}\n#{err.class}:\n#{err_message}"
         end
@@ -3130,8 +3140,8 @@ class MSPhysics::Simulation < MSPhysics::Entity
       begin
         init_joint(jinfo[0], jinfo[1], jinfo[2], jinfo[3])
       rescue Exception => err
-        err_message = err.message
-        err_backtrace = err.backtrace
+        err_message = err.message.dup
+        err_backtrace = err.backtrace ? err.backtrace.map(&:dup) : []
         unless AMS::IS_RUBY_VERSION_18
           err_message.force_encoding('UTF-8')
           err_backtrace.each { |i| i.force_encoding('UTF-8') }
@@ -3229,8 +3239,8 @@ class MSPhysics::Simulation < MSPhysics::Entity
           return
         rescue StandardError => err
           index = ents.index(entity)
-          err_message = err.message
-          err_backtrace = err.backtrace
+          err_message = err.message.dup
+          err_backtrace = err.backtrace ? err.backtrace.map(&:dup) : []
           unless AMS::IS_RUBY_VERSION_18
             err_message.force_encoding('UTF-8')
             err_backtrace.each { |i| i.force_encoding('UTF-8') }
@@ -3363,9 +3373,15 @@ class MSPhysics::Simulation < MSPhysics::Entity
       MSPhysics::C::Particle.destroy_all
     end
     # Destroy world
-    if @world.valid?
-    @world.destroy_all_bodies
-    @world.destroy
+    if @world && @world.valid?
+      # The destructor procedure of the world cancels the simulation; it must
+      # not run while the simulation is torn down, as it would re-enter the tool
+      # handling of SketchUp. The bodies and joints are destroyed explicitly,
+      # before the world, so that the engine does not tear them down while its
+      # own world data is already being released.
+      MSPhysics::Newton::World.set_destructor_proc(@world.address, nil)
+      @world.destroy_all_bodies
+      @world.destroy
     end
     @world = nil
     # Erase log-line and display-note
@@ -3481,8 +3497,8 @@ class MSPhysics::Simulation < MSPhysics::Entity
     @simulation_started = false
     # Show info
     if @error
-      err_message = @error.message
-      err_backtrace = @error.backtrace
+      err_message = @error.message.dup
+      err_backtrace = @error.backtrace ? @error.backtrace.map(&:dup) : []
       unless AMS::IS_RUBY_VERSION_18
         err_message.force_encoding('UTF-8')
         err_backtrace.each { |i| i.force_encoding('UTF-8') }

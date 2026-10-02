@@ -2660,8 +2660,8 @@ end}
         MSPhysics::Replay.reset_replay_settings
         MSPhysics::Replay.clear_data_from_model(true, true)
         MSPhysics::Replay.clear_data_from_file
-        err_message = err.message
-        err_backtrace = err.backtrace
+        err_message = err.message.dup
+        err_backtrace = err.backtrace ? err.backtrace.map(&:dup) : []
         unless AMS::IS_RUBY_VERSION_18
           err_message.force_encoding('UTF-8')
           err_backtrace.each { |i| i.force_encoding('UTF-8') }

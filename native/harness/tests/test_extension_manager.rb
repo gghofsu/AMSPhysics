@@ -61,7 +61,7 @@ end
 
 # Register the same files as MSPhysics/main.rb does.
 check(failures, 'add libraries and ruby files') {
-  %w[libFLAC-8 libmikmod-2 libmodplug-1 libogg libvorbis libvorbisfile-3].each { |name| manager.add_optional_library(name) }
+  %w[libogg libogg-0 libFLAC-8 libmikmod-2 libmodplug-1 libvorbis libvorbisfile-3].each { |name| manager.add_optional_library(name) }
   %w[SDL2 SDL2_mixer].each { |name| manager.add_required_library(name) }
   manager.add_optional_library('smpeg2')
   manager.add_required_library('newton')
@@ -81,6 +81,7 @@ check(failures, "msp_lib.so copied to #{VERSION_EXT}") { File.exist?("#{VERSION_
 check(failures, "newton.dll copied to #{VERSION_LIB}") { File.exist?("#{VERSION_LIB}/newton.dll") }
 check(failures, 'SDL2.dll copied') { File.exist?("#{VERSION_LIB}/SDL2.dll") }
 check(failures, 'SDL2_mixer.dll copied') { File.exist?("#{VERSION_LIB}/SDL2_mixer.dll") }
+check(failures, 'optional libogg-0.dll copied') { File.exist?("#{VERSION_LIB}/libogg-0.dll") }
 check(failures, 'optional libFLAC-8.dll copied') { File.exist?("#{VERSION_LIB}/libFLAC-8.dll") }
 check(failures, 'optional smpeg2.dll copied') { File.exist?("#{VERSION_LIB}/smpeg2.dll") }
 

@@ -99,7 +99,7 @@ module MSPhysics::ControlPanel
 
       @dialog.add_action_callback('update_note') { |acs, params|
         next unless AMS::IS_PLATFORM_WINDOWS
-        cmd = ""
+        cmd = String.new
         if AMS::Sketchup.is_main_window_active?
           cmd << "$('#note1').css('display', 'none');"
           cmd << "$('#note2').css('display', 'none');"

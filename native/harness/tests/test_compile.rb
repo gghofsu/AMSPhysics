@@ -1,6 +1,6 @@
-# Harness test: compile every Ruby file of the repository with the embedded
-# CRuby 3.2 (the Ruby version used by SketchUp 2024-2026), which is the
-# equivalent of `ruby -c`.
+# Harness test: compile every Ruby file of the repository with the Ruby version
+# the harness runs on (3.4 for SketchUp 2027 by default, 3.2 for SketchUp
+# 2024-2026 with --ruby 3.2), which is the equivalent of `ruby -c`.
 #
 # Run with: node native/harness/run_wasm.js native/harness/tests/test_compile.rb
 $stdout.sync = true

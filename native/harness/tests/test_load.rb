@@ -1,6 +1,7 @@
-# Harness test: load AMS Library and MSPhysics on a stubbed Ruby 3.2 / SketchUp
-# 2026 environment, verifying the whole require chain and the AMS Library
-# fallback for the native part.
+# Harness test: load AMS Library and MSPhysics on a stubbed SketchUp
+# environment, verifying the whole require chain and the AMS Library fallback
+# for the native part. The Ruby version and the SketchUp version that are
+# simulated are selected by the runner (see native/harness/run_tests.sh).
 #
 # Run with: node native/harness/run_wasm.js native/harness/tests/test_load.rb
 $stdout.sync = true
@@ -9,20 +10,23 @@ $stdout.sync = true
 require 'sketchup.rb'
 
 if ARGV.include?('--simulate-abi')
-  # No native engine is staged for this Ruby version yet (e.g. Ruby 3.4, which
-  # SketchUp announced for a future release). Copy the 3.2 engine to the folder
-  # of the running Ruby version so that the Ruby part can be exercised; the C
-  # extension itself is stubbed out by this harness either way.
+  # No native engine is staged for this Ruby version. Copy the newest staged
+  # engine to the folder of the running Ruby version so that the Ruby part can
+  # be exercised; the C extension itself is stubbed out by this harness either
+  # way.
   require 'fileutils'
   stage = '/MSPhysics/libraries/stage/win64'
-  source = File.join(stage, '3.2')
+  source_abi = Dir.entries(stage).select { |entry|
+    File.exist?(File.join(stage, entry, 'msp_lib.so'))
+  }.sort.last
+  source = File.join(stage, source_abi)
   target = File.join(stage, RUBY_VERSION[0..2])
   FileUtils.mkdir_p(target)
   Dir.entries(source).each { |entry|
     fpath = File.join(source, entry)
     FileUtils.cp(fpath, File.join(target, entry)) if File.file?(fpath)
   }
-  puts "   (using the 3.2 engine as a stand-in for Ruby #{RUBY_VERSION[0..2]})"
+  puts "   (using the Ruby #{source_abi} engine as a stand-in for Ruby #{RUBY_VERSION[0..2]})"
 end
 
 failures = []
@@ -46,9 +50,9 @@ puts '== require chain: MSPhysics.rb -> main_entry -> ams_lib -> MSPhysics/main 
 # A guard so that a failure of the require chain does not abort the script.
 begin
   if ARGV.include?('--skip-abi-gate')
-    # Used when running on a Ruby version for which no native engine is staged
-    # (e.g. the announced Ruby 3.4): load the AMS Library and the extension
-    # directly instead of going through the ABI gate of MSPhysics/main_entry.rb.
+    # Used when running on a Ruby version for which no native engine is staged:
+    # load the AMS Library and the extension directly instead of going through
+    # the ABI gate of MSPhysics/main_entry.rb.
     require 'MSPhysics.rb'
     require 'ams_lib.rb'
     require 'ams_lib/main'
@@ -75,7 +79,7 @@ check(failures, 'MSPhysics.large_integer?(2**40)') { MSPhysics.large_integer?(2*
 check(failures, 'MSPhysics.invert_transform(invertible)') { MSPhysics.invert_transform(Geom::Transformation.translation(1, 1, 1)).class }
 check(failures, 'MSPhysics.invert_transform(singular)') { MSPhysics.invert_transform(Geom::Transformation.scaling(0, 0, 0)).class }
 
-puts '== scene change wrapper (SketchUp 2026 undoable scene properties) =='
+puts '== scene change wrapper (undoable scene properties since SketchUp 2026) =='
 model = Sketchup.active_model
 begin
   MSPhysics.wrap_scene_change('Test Op') { model.pages.add('Test Page') }
@@ -131,7 +135,7 @@ rescue Exception => err
 end
 
 puts '== AMS Library usability check =='
-check(failures, 'MSPhysics.ams_library_usable? (bundled AMS 3.8.0a)') { MSPhysics.ams_library_usable? }
+check(failures, "MSPhysics.ams_library_usable? (bundled AMS #{AMS::Lib::VERSION})") { MSPhysics.ams_library_usable? }
 
 puts '== reply for the extension panels =='
 check(failures, 'MSPhysics::Dialog') { MSPhysics::Dialog }

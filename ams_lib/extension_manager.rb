@@ -400,7 +400,7 @@ module AMS
       # of that library.
       dll_report = nil
       if !@libraries.empty? && AMS::IS_PLATFORM_WINDOWS
-        dll_report = "Libraries:\n"
+        dll_report = String.new("Libraries:\n")
         failed = []
         reports_status = AMS::DLL.respond_to?(:load_library_info)
         @libraries.each { |data|

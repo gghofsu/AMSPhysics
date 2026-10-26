@@ -1182,7 +1182,7 @@ module MSPhysics::Replay
       # Save groups
       fgroups_data.each { |group, data|
         next if !(((group.is_a?(Sketchup::Group) || group.is_a?(Sketchup::ComponentInstance)) && group.valid?) || (data[:definition] && data[:definition].valid?))
-        str = "{:groups_data=>{"
+        str = String.new("{:groups_data=>{")
         str << "#{data[:id]}=>{"
         str << ":start_frame=>#{data[:start_frame]}," if data[:start_frame]
         str << ":end_frame=>#{data[:end_frame]}," if data[:end_frame]
@@ -1245,7 +1245,7 @@ module MSPhysics::Replay
       }
       # Save materials
       saved_mats = {}
-      str = "{:materials_data=>{"
+      str = String.new("{:materials_data=>{")
       fmaterials_data.each { |material, data|
         if material.is_a?(Sketchup::Material) && material.valid?
           material.set_attribute(dict, 'ID', data[:id])
@@ -1281,7 +1281,7 @@ module MSPhysics::Replay
       gz.puts str
       # Save layers
       saved_lays = {}
-      str = "{:layers_data=>{"
+      str = String.new("{:layers_data=>{")
       flayers_data.each { |layer, data|
         if layer.is_a?(Sketchup::Layer) && layer.valid?
           layer.set_attribute(dict, 'ID', data[:id])
@@ -1316,7 +1316,7 @@ module MSPhysics::Replay
       str << "}}"
       gz.puts str
       # Save camera
-      str = "{:camera_data=>{"
+      str = String.new("{:camera_data=>{")
       str << ":start_frame=>#{fcamera_data[:start_frame]}," if fcamera_data[:start_frame]
       str << ":end_frame=>#{fcamera_data[:end_frame]}," if fcamera_data[:end_frame]
       fcamera_data.each { |pframe, fdata|
@@ -1345,7 +1345,7 @@ module MSPhysics::Replay
       str << "}}"
       gz.puts str
       # Save render
-      str = "{:render_data=>{"
+      str = String.new("{:render_data=>{")
       str << ":start_frame=>#{frender_data[:start_frame]}," if frender_data[:start_frame]
       str << ":end_frame=>#{frender_data[:end_frame]}," if frender_data[:end_frame]
       frender_data.each { |pframe, fdata|
@@ -1376,7 +1376,7 @@ module MSPhysics::Replay
       str << "}}"
       gz.puts str
       # Save shadow
-      str = "{:shadow_data=>{"
+      str = String.new("{:shadow_data=>{")
       str << ":start_frame=>#{fshadow_data[:start_frame]}," if fshadow_data[:start_frame]
       str << ":end_frame=>#{fshadow_data[:end_frame]}," if fshadow_data[:end_frame]
       fshadow_data.each { |pframe, fdata|

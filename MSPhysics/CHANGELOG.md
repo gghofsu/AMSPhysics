@@ -1,3 +1,38 @@
+## 1.1.7 - October 26, 2026
+- SketchUp 2027 support. SketchUp 2027 embeds Ruby 3.4 instead of Ruby 3.2, so
+  the native engine is built and staged for the Ruby 3.4 ABI
+  (x64-ucrt-ruby340) next to the Ruby 3.2 build
+  (MSPhysics/libraries/stage/win64/3.4/). Both are shipped, and the loader picks
+  the one that matches the Ruby version of the running SketchUp.
+- UI.refresh_toolbars, which SketchUp 2027 deprecated, is no longer called
+  there; AMS Library calls it only on SketchUp 2026 and earlier, so it does not
+  write a deprecation warning into the Ruby console any more.
+- Sketchup::ShadowInfo#[]= warns instead of raising when a key is written that
+  cannot be written. The keys that cannot be written are skipped without
+  writing them at all, and while MSPhysics suppresses a warning it filters it
+  out of the console instead of silencing every warning.
+- Ruby 3.4 compiles the string literals of a file into chilled strings: they
+  can still be mutated, but every mutation is reported as a deprecation
+  warning, and a future Ruby version is to freeze them. Every accumulator that
+  started with a literal and appended to it (the panels and the dialogs that
+  assemble their JavaScript, the replay writer, the translation, the library
+  report, the load error report) starts with String.new now. A harness test
+  walks the instructions of every Ruby file to keep it that way.
+- The modifier flags of Sketchup::Tool#onKeyDown and #onKeyUp were corrected in
+  SketchUp 2027. The tools of MSPhysics compare the key code and not the flags,
+  so they needed no change.
+- SketchUp 2027 shows several models in tabs of one window (MDI). MSPhysics
+  keeps the state of the simulation of the model that was active when it was
+  started and does not support simulating several models at the same time.
+- AMS Library 3.8.1 knows the Ruby versions up to 3.5 and documents the Ruby
+  ABI version it was built for (AMS::RUBY_ABI_VERSION).
+- The development harness runs on Ruby 3.4 with a stubbed SketchUp 2027 API by
+  default, and on Ruby 3.2 with --ruby 3.2; it gained checks for the SketchUp
+  2027 API changes and for mutated string literals.
+- The Windows build script takes the Ruby ABI it builds for
+  (tools/build_win64.sh --ruby 3.4 | --ruby 3.2 | --all) and reuses the engine
+  objects between the ABIs, so only the extension is compiled twice.
+
 ## 1.1.6 - September 29, 2026
 - Fixed the reason why MSPhysics stopped loading from the second start of
   SketchUp on: AMS Library deletes every Ruby file of its folder that is not

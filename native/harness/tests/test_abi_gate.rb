@@ -1,7 +1,8 @@
 # Harness test: verify that the staged native engines cover the SketchUp
 # versions that are expected to be supported.
 #
-# SketchUp 2017-2023 use Ruby 2.2/2.5/2.7, SketchUp 2024-2026 use Ruby 3.2.
+# SketchUp 2017-2023 use Ruby 2.2/2.5/2.7, SketchUp 2024-2026 use Ruby 3.2 and
+# SketchUp 2027 uses Ruby 3.4.
 #
 # Run with: node native/harness/run_wasm.js native/harness/tests/test_abi_gate.rb
 $stdout.sync = true
@@ -17,7 +18,12 @@ RUBY_VERSIONS = {
   '2024' => '3.2',
   '2025' => '3.2',
   '2026' => '3.2',
+  '2027' => '3.4',
 }.freeze
+
+# The Ruby versions for which a Windows engine has to be staged: Ruby 3.2 for
+# SketchUp 2024-2026 and Ruby 3.4 for SketchUp 2027.
+REQUIRED_WIN64_ABIS = ['3.2', '3.4'].freeze
 
 failures = []
 
@@ -39,13 +45,17 @@ end
 
 puts
 puts '== requirements =='
-# Windows is the platform the extension is fully supported on: the staged
-# win64 engine has to exist for Ruby 3.2 (SketchUp 2024-2026).
-if results['win64'].include?('3.2')
-  puts '  ok   win64 Ruby 3.2 engine (SketchUp 2024-2026)'
-else
-  failures << 'win64 Ruby 3.2 engine is missing'
-  puts '  FAIL win64 Ruby 3.2 engine (SketchUp 2024-2026)'
+# Windows is the platform the extension is fully supported on: a staged win64
+# engine has to exist for every Ruby version of a supported SketchUp release
+# that is still current (Ruby 3.2 and Ruby 3.4).
+REQUIRED_WIN64_ABIS.each do |abi|
+  releases = RUBY_VERSIONS.select { |_release, version| version == abi }.keys
+  if results['win64'].include?(abi)
+    puts "  ok   win64 Ruby #{abi} engine (SketchUp #{releases.join(', ')})"
+  else
+    failures << "win64 Ruby #{abi} engine is missing (SketchUp #{releases.join(', ')})"
+    puts "  FAIL win64 Ruby #{abi} engine is missing (SketchUp #{releases.join(', ')})"
+  end
 end
 
 results['win64'].each do |abi|
@@ -53,10 +63,27 @@ results['win64'].each do |abi|
   puts "  ok   win64 Ruby #{abi} engine present"
 end
 
-if results['osx64'].include?('3.2')
-  puts '  ok   osx64 Ruby 3.2 engine (SketchUp 2024-2026)'
-else
-  puts '  note osx64 has no Ruby 3.2 engine; the ABI gate reports this to the user'
+# Both msp_lib and newton.dll are built from the same sources and have to be
+# shipped as a pair, per Ruby ABI version. (The older ABI folders only ship
+# msp_lib; they use the generic newton.dll of the stage folder.)
+REQUIRED_WIN64_ABIS.each do |abi|
+  next unless results['win64'].include?(abi)
+  dir = File.join(STAGE, 'win64', abi)
+  missing = %w[msp_lib.so newton.dll].reject { |name| File.exist?(File.join(dir, name)) }
+  if missing.empty?
+    puts "  ok   win64/#{abi} ships msp_lib.so and newton.dll"
+  else
+    failures << "win64/#{abi} is missing #{missing.join(', ')}"
+    puts "  FAIL win64/#{abi} is missing #{missing.join(', ')}"
+  end
+end
+
+['3.2', '3.4'].each do |abi|
+  if results['osx64'].include?(abi)
+    puts "  ok   osx64 Ruby #{abi} engine present"
+  else
+    puts "  note osx64 has no Ruby #{abi} engine; the ABI gate reports this to the user"
+  end
 end
 
 puts

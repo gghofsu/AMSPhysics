@@ -77,7 +77,7 @@ module AMS
     # @param [String] t1 Text to translate
     # @return [String]
     def convert_text(t1)
-      t2 = ""
+      t2 = String.new
       i1 = 0
       i2 = nil
       len = t1.length

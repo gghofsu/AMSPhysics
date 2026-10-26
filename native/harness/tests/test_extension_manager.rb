@@ -45,10 +45,11 @@ native_available = check(failures, "c_extension_available?('msp_lib') for Ruby #
 }
 
 unless native_available
-  # No engine is staged for the running Ruby version (e.g. when running on
-  # Ruby 3.4, which SketchUp announced for a future release). The staging
-  # checks below only make sense when an engine exists; what matters here is
-  # that the manager reports the situation instead of failing.
+  # No engine is staged for the running Ruby version, i.e. a SketchUp release
+  # that this build does not support (Ruby 3.2 and Ruby 3.4 are staged, for
+  # SketchUp 2024-2026 and SketchUp 2027). The staging checks below only make
+  # sense when an engine exists; what matters here is that the manager reports
+  # the situation instead of failing.
   puts "   note: no engine staged for Ruby #{ABI} (available: #{abis.inspect})"
   puts
   if manager.c_extension_available?('msp_lib') == false
@@ -85,7 +86,7 @@ check(failures, 'optional libogg-0.dll copied') { File.exist?("#{VERSION_LIB}/li
 check(failures, 'optional libFLAC-8.dll copied') { File.exist?("#{VERSION_LIB}/libFLAC-8.dll") }
 check(failures, 'optional smpeg2.dll copied') { File.exist?("#{VERSION_LIB}/smpeg2.dll") }
 
-check(failures, 'the Ruby 3.2 newton.dll is used, not the generic one') {
+check(failures, "the Ruby #{ABI} newton.dll is used, not the generic one") {
   abi_specific = File.binread("#{STAGE_EXT}/#{ABI}/newton.dll")
   generic = File.binread("#{STAGE_EXT}/newton.dll")
   copied = File.binread("#{VERSION_LIB}/newton.dll")

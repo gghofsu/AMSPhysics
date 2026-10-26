@@ -85,7 +85,7 @@ module MSPhysics::Dialog
       return if @dialog.nil? || !@init_called
       model = Sketchup.active_model
       return unless model
-      cmd = ''
+      cmd = String.new
       cmd << "$('#simulation-animate_scenes_state').val('#{MSPhysics::Settings.animate_scenes_state}');"
       cmd << "$('#simulation-animate_scenes_state').trigger('chosen:updated');"
       cmd << "$('#simulation-animate_scenes_reversed').prop('checked', #{MSPhysics::Settings.animate_scenes_reversed?});"
@@ -126,7 +126,7 @@ module MSPhysics::Dialog
       return if @dialog.nil? || !@init_called
       model = Sketchup.active_model
       return unless model
-      cmd = ''
+      cmd = String.new
       cmd << "if (g_kns_velocity != null) { g_kns_velocity.setValue(#{MSPhysics::Settings.key_nav_velocity}); };"
       cmd << "if (g_kns_omega != null) { g_kns_omega.setValue(#{MSPhysics::Settings.key_nav_omega}); };"
       cmd << "if (g_kns_atime != null) { g_kns_atime.setValue(#{MSPhysics::Settings.key_nav_atime}); };"
@@ -145,7 +145,7 @@ module MSPhysics::Dialog
         next unless ent.is_a?(Sketchup::Group) || ent.is_a?(Sketchup::ComponentInstance)
         bodies << ent if ent.get_attribute('MSPhysics', 'Type', 'Body') == 'Body'
       }
-      cmd = ""
+      cmd = String.new
       @body_internal_joints.clear
       @body_connected_joints.clear
       cmd << "$('#body-internal_joints_table').empty();"
@@ -394,7 +394,7 @@ module MSPhysics::Dialog
         next unless ent.is_a?(Sketchup::Group) || ent.is_a?(Sketchup::ComponentInstance)
         joints << ent if ent.get_attribute('MSPhysics', 'Type', 'Body') == 'Joint'
       }
-      cmd = ''
+      cmd = String.new
       cmd << "$('#tab4-none').css('display', 'block');"
       cmd << "$('#tab4-general').css('display', 'none');"
       cmd << "$('#tab4-fixed').css('display', 'none');"
@@ -825,7 +825,7 @@ module MSPhysics::Dialog
       return if @dialog.nil? || !@init_called
       model = Sketchup.active_model
       return unless model
-      cmd = ""
+      cmd = String.new
       cmd << "$('#sound-list').empty();"
       dict = model.attribute_dictionary('MSPhysics Sounds', false)
       if dict
@@ -1743,7 +1743,7 @@ module MSPhysics::Dialog
 
       @dialog.add_action_callback('sound_select_changed') { |acs, params|
         @selected_sound = params
-        cmd = ''
+        cmd = String.new
         ext = Sketchup.active_model.get_attribute('MSPhysics Sound Types', @selected_sound)
         if MSPhysics::EMBEDDED_MUSIC_FORMATS.include?(ext)
           cmd << "$('#sound-command_music').val('simulation.play_music(#{@selected_sound.inspect})');"
@@ -1871,7 +1871,7 @@ module MSPhysics::Dialog
       model.selection.add(error.entity)
       @app_observer.selection_observer_active = true
       @last_active_body_tab = 3
-      msg = "setTimeout(function() { update_placement(3, true); }, 100);"
+      msg = String.new("setTimeout(function() { update_placement(3, true); }, 100);")
       msg << "setTimeout(function() { editor_set_cursor(#{error.line}, 0); editor_select_current_line(); }, 200);" if error.line
       if @dialog
         update_state

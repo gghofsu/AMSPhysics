@@ -285,8 +285,8 @@ begin
       puts "[MSPhysics] #{msg}"
     end
   else
-    msg = "MSPhysics requires AMS Library, version 3.5.0 or later! MSPhysics will not be " \
-          "loaded with the library not installed or outdated.\n\n"
+    msg = String.new("MSPhysics requires AMS Library, version 3.5.0 or later! MSPhysics will not be " \
+          "loaded with the library not installed or outdated.\n\n")
     if ams_problems.empty?
       msg << "AMS Library was not found next to the MSPhysics extension folder."
     else

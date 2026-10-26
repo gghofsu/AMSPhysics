@@ -846,8 +846,27 @@ module Sketchup
         'UseSunForAllShading' => false,
       }.merge(data)
     end
+    # The keys that cannot be written. SketchUp does not document which keys
+    # of the shadow info are read-only; the harness only needs a non-empty set
+    # to exercise the code that has to deal with them
+    # (MSPhysics.set_shadow_info).
+    READ_ONLY_KEYS = ['SunDirection', 'SunRise', 'SunSet'].freeze
+
     def [](key); @data[key]; end
-    def []=(key, value); @data[key] = value; end
+
+    # SketchUp 2026.1 reports an attempt to write an invalid or read-only key
+    # with a KeyError, and SketchUp 2027 relaxed that to a Ruby warning.
+    def []=(key, value)
+      if READ_ONLY_KEYS.include?(key)
+        if Sketchup::VERSION_NUMBER >= 27.0
+          Warning.warn("ShadowInfo#[]= : #{key} is read-only\n")
+          return value
+        elsif Sketchup::VERSION_NUMBER >= 26.1
+          raise KeyError, "ShadowInfo#[]= : #{key} is read-only"
+        end
+      end
+      @data[key] = value
+    end
     def each(&block); @data.each(&block); end
     def each_pair(&block); @data.each_pair(&block); end
     def each_key(&block); @data.each_key(&block); end
@@ -1162,7 +1181,21 @@ module UI
   def self.beep; true; end
   def self.start_timer(interval, repeat = false); 1; end
   def self.stop_timer(id); true; end
-  def self.refresh_toolbars; true; end
+
+  # How often UI.refresh_toolbars was called, so that a test can verify that
+  # AMS Library does not call the method that SketchUp 2027 deprecated.
+  def self.refresh_toolbars_calls
+    @refresh_toolbars_calls = 0 unless defined?(@refresh_toolbars_calls)
+    @refresh_toolbars_calls
+  end
+
+  # Deprecated in SketchUp 2027: the state of the toolbars is refreshed
+  # automatically since then.
+  def self.refresh_toolbars
+    @refresh_toolbars_calls = refresh_toolbars_calls + 1
+    Warning.warn("UI.refresh_toolbars is deprecated\n") if Sketchup::VERSION_NUMBER >= 27.0
+    true
+  end
   def self.scale_factor(*args); 1.0; end
   def self.set_cursor(*args); true; end
   def self.show_extension_warehouse(*args); true; end
@@ -1253,10 +1286,14 @@ module UI
 end
 
 module Sketchup
-  VERSION = '26.2.243'.freeze
-  VERSION_NUMBER = 26.2
-  VERSION_MAJOR = 26
-  VERSION_MINOR = 2
+  # The SketchUp version the harness reports itself as. SketchUp 2027, which
+  # embeds Ruby 3.4, is the default; SU_VERSION=26.2.243 makes the harness
+  # behave like SketchUp 2026, which is the release the Ruby 3.2 runs
+  # correspond to (see native/harness/run_tests.sh).
+  VERSION = (ENV['SU_VERSION'] || '27.0.264').freeze
+  VERSION_NUMBER = VERSION.split('.')[0, 2].join('.').to_f
+  VERSION_MAJOR = VERSION.split('.')[0].to_i
+  VERSION_MINOR = VERSION.split('.')[1].to_i
 
   @active_model = nil
 
@@ -1270,7 +1307,6 @@ module Sketchup
     def is_pro?; true; end
     def is_online?; false; end
     def platform; 'win'; end
-    def mdi?; true; end
     def locale; 'en-US'; end
     def get_locale; 'en-US'; end
     def status_text=(text); text; end

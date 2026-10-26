@@ -6,8 +6,8 @@ require 'extensions.rb'
 module MSPhysics
 
   NAME         = 'MSPhysics'.freeze
-  VERSION      = '1.1.6'.freeze
-  RELEASE_DATE = 'September 29, 2026'.freeze
+  VERSION      = '1.1.7'.freeze
+  RELEASE_DATE = 'October 26, 2026'.freeze
 
   # Create the extension.
   dir = ::File.expand_path(::File.dirname(__FILE__))

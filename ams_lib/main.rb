@@ -59,7 +59,14 @@ module AMS
   # @since 3.8.0
   IS_RUBY_VERSION_34 = (RUBY_VERSION =~ /^3.4/ ? true : false)
 
-  # Ruby ABI version used by the running SketchUp, e.g. "3.2".
+  # @since 3.8.1
+  IS_RUBY_VERSION_35 = (RUBY_VERSION =~ /^3.5/ ? true : false)
+
+  # Ruby ABI version used by the running SketchUp, e.g. "3.4". This is the name
+  # of the folder the native libraries are staged in and the version part of
+  # the name of the Ruby library the native extensions are linked against
+  # (+x64-ucrt-ruby320.dll+ for the Ruby 3.2 of SketchUp 2024-2026,
+  # +x64-ucrt-ruby340.dll+ for the Ruby 3.4 of SketchUp 2027).
   # @since 3.8.0
   RUBY_ABI_VERSION = RUBY_VERSION[0..2].to_s.freeze
 
@@ -122,6 +129,18 @@ module AMS
       end
     end
 
+    # Whether the state of the toolbars can be refreshed with
+    # UI.refresh_toolbars.
+    #
+    # SketchUp 2027 deprecated the method, as it refreshes the state of the
+    # toolbars automatically; calling it there only produces a deprecation
+    # warning in the Ruby console.
+    # @return [Boolean]
+    # @since 3.8.1
+    def ui_refresh_toolbars_available?
+      ::UI.respond_to?(:refresh_toolbars) && AMS::SU_MAJOR_VERSION < 27
+    end
+
     if AMS::IS_PLATFORM_WINDOWS
 
       # @return [String]
@@ -142,6 +161,7 @@ module AMS
         return dir
       end
 
+      # There is nothing to refresh on Windows.
       # @since 3.6.0
       def refresh_toolbars
       end
@@ -163,21 +183,18 @@ module AMS
         return dir
       end
 
-      if AMS::SU_MAJOR_VERSION >= 18
-
-        def refresh_toolbars
+      # @since 3.6.0
+      def refresh_toolbars
+        if ui_refresh_toolbars_available?
           ::UI.refresh_toolbars
-        end
-
-      else
-
-        def refresh_toolbars
+        elsif AMS::SU_MAJOR_VERSION < 18
+          # Before SketchUp 2018 there was no method for it; pushing and
+          # popping a tool makes SketchUp rebuild its toolbars.
           model = ::Sketchup.active_model
           return unless model
           model.tools.push_tool(nil)
           model.tools.pop_tool
         end
-
       end
     end
 

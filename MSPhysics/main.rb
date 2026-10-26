@@ -366,18 +366,77 @@ module MSPhysics
     #
     # SketchUp 2026.1 makes Sketchup::ShadowInfo#[]= stricter: it raises a
     # KeyError for invalid or read-only keys, and a TypeError for values of an
-    # incorrect type. As MSPhysics iterates over all the shadow info keys when
-    # restoring or transitioning scenes, values that cannot be set are skipped.
+    # incorrect type. SketchUp 2027 relaxed that again: it reports an attempt
+    # to write a read-only key with a Ruby warning instead of an error. As
+    # MSPhysics iterates over all the shadow info keys when restoring or
+    # transitioning scenes - once per frame - the keys that cannot be written
+    # are remembered and skipped, and the warnings of the attempt are
+    # suppressed, so that the Ruby console is not flooded.
     # @param [Sketchup::ShadowInfo] shadow_info
     # @param [String] key
     # @param [Object] value
     # @return [Boolean] true if the value was set.
     # @since 1.1.1
     def set_shadow_info(shadow_info, key, value)
-      shadow_info[key] = value
+      return false if unwritable_shadow_info_keys.key?(key)
+      without_warnings(key) { shadow_info[key] = value }
       true
     rescue KeyError, TypeError
+      unwritable_shadow_info_keys[key] = true
       false
+    end
+
+    # Get the shadow info keys that cannot be written, which have been
+    # collected while the extension ran.
+    # @return [Hash{String => true}]
+    # @since 1.1.7
+    def unwritable_shadow_info_keys
+      @unwritable_shadow_info_keys ||= {}
+    end
+
+    # Execute the given block with the Ruby warnings that it produces
+    # suppressed.
+    #
+    # SketchUp 2027 reports an attempt to write a read-only shadow info key
+    # with a Ruby warning. Such an attempt is made for every shadow info key
+    # that a scene restores, on every frame of the transition, so the warnings
+    # that MSPhysics causes are dropped while it performs the write; warnings
+    # of other code are passed through unchanged.
+    # @param [String, nil] key Shadow info key that is being written, if any.
+    #   When the block produces a warning, the key is remembered as unwritable.
+    # @return [Object] The value returned by the block.
+    # @since 1.1.7
+    def without_warnings(key = nil)
+      return yield unless defined?(::Warning)
+      @suppressed_key = key
+      @warnings_suppressed = true
+      begin
+        yield
+      ensure
+        @warnings_suppressed = false
+        @suppressed_key = nil
+      end
+    end
+
+    # Whether the Ruby warnings produced right now are suppressed by this
+    # extension. Called by the filter that is installed into Warning.
+    # @!visibility private
+    # @return [Boolean]
+    # @since 1.1.7
+    def warnings_suppressed?
+      @warnings_suppressed ? true : false
+    end
+
+    # Report a Ruby warning that this extension suppressed. SketchUp 2027
+    # reports an attempt to write a read-only shadow info key that way, so the
+    # key is remembered and not written again.
+    # @!visibility private
+    # @return [nil]
+    # @since 1.1.7
+    def warning_suppressed
+      key = @suppressed_key
+      unwritable_shadow_info_keys[key] = true if key
+      nil
     end
 
     # Invert the given transformation, returning an identity transformation
@@ -853,6 +912,29 @@ module MSPhysics
 
   end # class << self
 end # module MSPhysics
+
+# Drop the Ruby warnings that MSPhysics suppresses while it writes the shadow
+# info of a scene. SketchUp 2027 reports an attempt to write a read-only key
+# with a warning, and the scene transitions attempt every key on every frame,
+# so the warnings of this extension would otherwise flood the Ruby console.
+# Warnings of other code are passed through unchanged.
+# @!visibility private
+# @since 1.1.7
+unless defined?(::MSPhysics::WarningFilter)
+  module MSPhysics
+    # @!visibility private
+    module WarningFilter
+      def warn(*args, **kwargs)
+        if ::MSPhysics.warnings_suppressed?
+          ::MSPhysics.warning_suppressed
+          return nil
+        end
+        super
+      end
+    end
+  end
+  ::Warning.singleton_class.prepend(::MSPhysics::WarningFilter) if defined?(::Warning)
+end
 
 unless file_loaded?(__FILE__)
   # Setup audio
@@ -1750,7 +1832,7 @@ unless file_loaded?(__FILE__)
   }
 
   item = plugin_menu.add_item('Delete All Attributes') {
-    msg = "This option removes all MSPhysics assigned properties, scripts, and record of connected joints.\n"
+    msg = String.new("This option removes all MSPhysics assigned properties, scripts, and record of connected joints.\n")
     msg << "Do you want to proceed?"
     choice = UI.messagebox(msg, MB_YESNO)
     if choice == IDYES

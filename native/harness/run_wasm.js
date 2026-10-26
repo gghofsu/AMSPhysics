@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Development harness: run a Ruby script with CRuby 3.2 (ruby.wasm) against the
+// Development harness: run a Ruby script with CRuby (ruby.wasm) against the
 // files of this repository.
 //
 // The script to run is read from the host file system and evaluated inside the
@@ -11,8 +11,8 @@
 //   node native/harness/run_wasm.js native/harness/tests/test_load.rb
 //
 // Requirements:
-//   npm install --prefix /tmp/rbwasm @ruby/wasm-wasi @ruby/3.2-wasm-wasi \
-//       @bjorn3/browser_wasi_shim
+//   npm install --prefix /tmp/rbwasm @ruby/wasm-wasi @ruby/3.4-wasm-wasi \
+//       @ruby/3.2-wasm-wasi @bjorn3/browser_wasi_shim
 //   (set RUBY_WASM_MODULES to a different prefix if installed elsewhere)
 const fs = require('fs');
 const path = require('path');
@@ -28,9 +28,16 @@ const {
   WASI,
 } = require(path.join(MODULES, '@bjorn3/browser_wasi_shim'));
 
-// Ruby version to run: 3.2 (the version SketchUp 2024-2026 embed) by default,
-// or 3.4 (the version SketchUp announced for a future release).
-const RUBY_VERSION_TARGET = process.env.RUBY_WASM_VERSION || '3.2';
+// Ruby version to run: 3.4 (the version SketchUp 2027 embeds) by default, or
+// 3.2 (the version SketchUp 2024-2026 embed).
+const RUBY_VERSION_TARGET = process.env.RUBY_WASM_VERSION || '3.4';
+
+// Environment variables that are passed into the VM. SU_VERSION selects the
+// SketchUp version the stub API reports itself as; the tests use it to run
+// against the SketchUp release that belongs to the Ruby version under test.
+const VM_ENV = ['SU_VERSION']
+  .filter((key) => process.env[key])
+  .map((key) => `${key}=${process.env[key]}`);
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const STUBS = path.join(__dirname, 'stubs');
@@ -89,7 +96,7 @@ function lineBuffered(prefix) {
     // PreopenDirectory expects the contents map, not the Directory itself.
     new PreopenDirectory('/', root.contents),
   ];
-  const wasi = new WASI([], [], fds, { debug: false });
+  const wasi = new WASI([], VM_ENV, fds, { debug: false });
   const source = fs.readFileSync(
     path.join(MODULES, `@ruby/${RUBY_VERSION_TARGET}-wasm-wasi/dist/ruby+stdlib.wasm`)
   );
@@ -97,6 +104,12 @@ function lineBuffered(prefix) {
   const { vm } = await RubyVM.instantiateModule({ module: module_, wasip1: wasi });
   try {
     vm.eval("$LOAD_PATH.unshift('/') unless $LOAD_PATH.include?('/')");
+    // Deprecation warnings are off by default; HARNESS_WARNINGS=deprecated
+    // turns them on, which surfaces the code that Ruby 4.0 will reject, e.g.
+    // mutated string literals (frozen by default from Ruby 3.5 on).
+    if (process.env.HARNESS_WARNINGS === 'deprecated') {
+      vm.eval('Warning[:deprecated] = true');
+    }
     vm.eval("ARGV.replace(" + JSON.stringify(process.argv.slice(3)) + ")");
     vm.eval(code);
   } catch (err) {

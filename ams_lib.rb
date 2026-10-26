@@ -15,7 +15,7 @@ unless file_loaded?(fpath)
 
       MAJOR_VERSION = 3.freeze
       MINOR_VERSION = 8.freeze
-      PATCH_VERSION = 0.freeze
+      PATCH_VERSION = 1.freeze
       DEVEL_VERSION = 0.freeze
 
       VERSION_INT = (MAJOR_VERSION * 1000 + MINOR_VERSION * 100 + PATCH_VERSION * 10 + DEVEL_VERSION).to_i
@@ -23,7 +23,7 @@ unless file_loaded?(fpath)
 
       RELEASE_YEAR_START = 2013.freeze
       RELEASE_YEAR_END = 2026.freeze
-      RELEASE_DATE = '29 September 2026'.freeze
+      RELEASE_DATE = '26 October 2026'.freeze
 
       # Create the extension.
       cfpath = __FILE__.dup
